@@ -1,0 +1,1 @@
+{ "permissions": { "allow": ["Bash(npm run *)", "Bash(git push *)"], "deny": ["Edit(src/**)"] } }

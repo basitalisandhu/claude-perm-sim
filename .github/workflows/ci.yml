@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["20", "22"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build and test
+        run: npm test
+      - name: Pack and smoke-test the tarball
+        run: |
+          npm pack
+          mkdir -p "$RUNNER_TEMP/smoke" && cd "$RUNNER_TEMP/smoke"
+          npm init -y >/dev/null
+          npm install "$GITHUB_WORKSPACE"/basitalisandhu-claude-perm-sim-*.tgz
+          npx claude-perm-sim --version
+          npx claude-perm-sim --help | head -1
+
+  container-build:
+    name: Build the container image and run it
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the image, print --help and run it on an empty project
+        run: |
+          docker build --build-arg VERSION=ci -t claude-perm-sim:ci .
+          docker run --rm claude-perm-sim:ci --help > help.txt && grep "^Usage" help.txt
+          docker run --rm claude-perm-sim:ci --version
+          test "$(docker run --rm --entrypoint id claude-perm-sim:ci -u)" = "1000"
+          mkdir -p "$RUNNER_TEMP/empty"
+          docker run --rm -v "$RUNNER_TEMP/empty:/work:ro" claude-perm-sim:ci load > out.txt
+          grep -q "allow" out.txt

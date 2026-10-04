@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build)",
+      "Bash(npm run test)",
+      "Bash(node --version)",
+      "Edit(src/**)",
+      "Edit(test/**)",
+      "WebFetch(domain:docs.example.com)",
+      "mcp__github__get_issue",
+      "mcp__github__list_issues"
+    ],
+    "ask": ["mcp__github__create_issue"],
+    "deny": ["Read(.env)", "Read(secrets/**)", "Bash(rm *)", "Edit(.git/**)", "Edit(.claude/**)"]
+  }
+}

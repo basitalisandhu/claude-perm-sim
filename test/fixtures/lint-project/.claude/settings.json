@@ -1,0 +1,6 @@
+{
+  "permissions": {
+    "allow": ["Bash(*)", "Edit(**)", "mcp__*", "Bash(git push *)", "Write(docs/**)", "Bash(npm run *)", "Bash(npm run *)", "mcp__gh__delete_repo", "Read(a\\b)"],
+    "deny": ["Bash(git push *)"]
+  }
+}
