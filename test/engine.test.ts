@@ -36,6 +36,44 @@ function rs(lists: { allow?: string[]; ask?: string[]; deny?: string[] }): RuleS
 }
 
 describe('evaluation order: deny, then ask, then allow', () => {
+  it.each([
+    'Write(.git/hooks/pre-commit)',
+    'Bash(cp a.txt .git/hooks/pre-commit)',
+    'Edit(.claude/settings.json)',
+    'Edit(.mcp.json)',
+    'Write(.config/git/config)',
+    'Edit(.cargo/config.toml)',
+    'Write(gradle-wrapper.properties)',
+    'Edit(nested/.vscode/settings.json)',
+    'Write(.idea/workspace.xml)',
+    'Bash(touch .husky/pre-commit)',
+    'Write(.bashrc)',
+    'Edit(nested/.npmrc)',
+    'Edit(.claude/worktrees/task/.git/config)',
+  ])('does not automatically allow protected paths: %s', (call) => {
+    const set = rs({});
+    set.mode = 'acceptEdits';
+    expect(decide(set, call)).toBe('default');
+  });
+
+  it('checks resolved protected paths while permitting ordinary worktree files', () => {
+    const set = rs({});
+    set.mode = 'acceptEdits';
+    expect(evaluate({ tool: 'Edit', input: { file_path: 'link' }, resolvedPath: '/project/.git/config' }, set).decision).toBe('default');
+    for (const call of ['Edit(.claude/worktrees/task/src/app.ts)', 'Bash(touch .claude/worktrees/task/notes.txt)', 'Edit(.gitignore)', 'Edit(.claude-notes/file)', 'Edit(.config/github/config)', 'Bash(mv a.txt ../b.txt)']) {
+      expect(decide(set, call)).toBe(call.includes('../') ? 'default' : 'allow');
+    }
+  });
+
+  it('preserves explicit protected-path deny and ask decisions', () => {
+    for (const list of ['deny', 'ask'] as const) {
+      const set = rs({ [list]: ['Edit(.git/**)'] });
+      set.mode = 'acceptEdits';
+      expect(decide(set, 'Write(.git/hooks/pre-commit)')).toBe(list);
+      expect(decide(set, 'Bash(cp a.txt .git/hooks/pre-commit)')).toBe(list);
+    }
+  });
+
   it('models acceptEdits only for edits and simple filesystem commands in working directories', () => {
     const set = rs({});
     set.mode = 'acceptEdits';

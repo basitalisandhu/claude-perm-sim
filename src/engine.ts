@@ -8,6 +8,18 @@ import type { Decision, ListName, Rule, RuleSet, Step, ToolCall, Verdict } from 
 export const READ_TOOLS = new Set(['Read', 'Grep', 'Glob']);
 export const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
+// Static protected paths: https://code.claude.com/docs/en/permission-modes#protected-paths
+const PROTECTED_DIRS = new Set(['.git', '.vscode', '.idea', '.husky', '.cargo', '.devcontainer', '.yarn', '.mvn']);
+const PROTECTED_FILES = new Set([
+  '.gitconfig', '.gitmodules', '.bashrc', '.bash_profile', '.bash_login', '.bash_aliases',
+  '.bash_logout', '.zshrc', '.zprofile', '.zshenv', '.zlogin', '.zlogout', '.profile', '.envrc',
+  '.npmrc', '.yarnrc', '.yarnrc.yml', '.pnp.cjs', '.pnp.loader.mjs', '.pnpmfile.cjs',
+  'bunfig.toml', '.bunfig.toml', '.bazelrc', '.bazelversion', '.bazeliskrc',
+  '.pre-commit-config.yaml', 'lefthook.yml', 'lefthook.yaml', '.lefthook.yml', '.lefthook.yaml',
+  'gradle-wrapper.properties', 'maven-wrapper.properties', '.devcontainer.json',
+  '.ripgreprc', 'pyrightconfig.json', '.mcp.json', '.claude.json',
+]);
+
 function ctxOf(set: RuleSet): PathContext {
   return { projectDir: set.projectDir, home: set.home };
 }
@@ -132,6 +144,16 @@ function insideWorkingDirs(set: RuleSet, abs: string): string | undefined {
   return workingDirs(set).find((d) => isInside(d, abs));
 }
 
+function modePathAllowed(set: RuleSet, target: string): boolean {
+  const abs = resolveRequestedPath(target, ctxOf(set));
+  const parts = abs.split('/').filter(Boolean);
+  const protectedPath = PROTECTED_FILES.has(parts[parts.length - 1]) || parts.some((part, i) =>
+    PROTECTED_DIRS.has(part)
+    || (part === '.config' && parts[i + 1] === 'git')
+    || (part === '.claude' && parts[i + 1] !== 'worktrees'));
+  return !protectedPath && insideWorkingDirs(set, abs) !== undefined;
+}
+
 function pathCall(tool: string, p: string): ToolCall {
   return { tool, input: { file_path: p } };
 }
@@ -209,14 +231,14 @@ function bashMatches(set: RuleSet, list: ListName, command: string, call: ToolCa
         else {
           const ro = readOnlyReason(s);
           if (ro) steps.push({ decision: 'allow', builtin: ro, subject: s.text });
-          else if (modePaths.length && modePaths.every((p) => insideWorkingDirs(set, resolveRequestedPath(p, ctxOf(set))))) {
+          else if (modePaths.length && modePaths.every((p) => modePathAllowed(set, p))) {
             steps.push({ decision: 'allow', builtin: 'acceptEdits filesystem command inside working directories', subject: s.text });
           }
           else uncovered.push(s.text);
         }
         for (const f of files.write) {
           if (fileHits.some((h) => h.subject === `writes ${f}`)) continue;
-          const modeAllowed = modePaths.length > 0 && modePaths.every((p) => insideWorkingDirs(set, resolveRequestedPath(p, ctxOf(set))));
+          const modeAllowed = modePaths.length > 0 && modePaths.every((p) => modePathAllowed(set, p));
           if (toolLevel.length === 0 && !modeAllowed) uncovered.push(`${s.program} writes ${f}`);
         }
       }
@@ -325,7 +347,7 @@ export function evaluate(call: ToolCall, set: RuleSet): Verdict {
   }
   if (set.mode === 'acceptEdits' && EDIT_TOOLS.has(call.tool) && callPath(call) !== undefined) {
     const targets = [callPath(call)!, ...(call.resolvedPath === undefined ? [] : [call.resolvedPath])];
-    if (targets.every((p) => insideWorkingDirs(set, resolveRequestedPath(p, ctxOf(set))))) {
+    if (targets.every((p) => modePathAllowed(set, p))) {
       return {
         call, decision: 'allow',
         decidedBy: [{ decision: 'allow', builtin: 'acceptEdits edit inside working directories', subject: describeCall(call) }],
