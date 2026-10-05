@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Add explicit `--mode default|acceptEdits`, preserving deny/ask precedence and limiting implicit filesystem approval to working directories.
 ## [0.1.0] - 2026-10-04
 
 First release. Published to two registries on GitHub Packages, using only the workflow's `GITHUB_TOKEN`:

@@ -5,6 +5,10 @@ import { fixture } from './helpers.js';
 const base = (name: string): string[] => ['--project', fixture(name), '--local', 'none', '--user', 'none', '--managed', 'none'];
 
 describe('argument parsing', () => {
+  it('reads and validates the explicit permission mode', () => {
+    expect(parseArgs(['explain', 'Edit(file)', '--mode=acceptEdits']).mode).toBe('acceptEdits');
+    expect(() => parseArgs(['explain', 'Edit(file)', '--mode', 'bypassPermissions'])).toThrow(UsageError);
+  });
   it('reads a command and positionals', () => {
     const o = parseArgs(['explain', 'Bash(ls)']);
     expect(o.command).toBe('explain');
@@ -26,6 +30,11 @@ describe('argument parsing', () => {
 });
 
 describe('run() in-process', () => {
+  it('applies the explicit mode in explain, not just in argument parsing', () => {
+    const args = ['explain', 'Edit(src/new.ts)', '--project', '/project', '--local', 'none', '--user', 'none', '--managed', 'none', '--format', 'json'];
+    expect(JSON.parse(run(args).stdout).decision).toBe('default');
+    expect(JSON.parse(run([...args, '--mode', 'acceptEdits']).stdout).decision).toBe('allow');
+  });
   it('prints help with no command and exits 2', () => {
     const r = run([]);
     expect(r.code).toBe(2);

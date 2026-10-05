@@ -95,6 +95,10 @@ Each finding names the rule, the weakness class, and a tighter rule, and uses an
 
 ## How matching is modelled
 
+Use `--mode acceptEdits` to simulate edits inside the working directory and additional directories without an explicit allow rule. The default remains `--mode default`; a recorded settings `defaultMode` does not silently select a simulation mode. Explicit deny and ask rules still win.
+
+The [permission-mode documentation](https://code.claude.com/docs/en/permissions) names common filesystem commands such as `mkdir`, `touch`, `mv` and `cp`. This simulator implements an inferred, conservative subset: one literal command, in-directory paths, no substitutions, globs, redirects or wrappers, and only `mkdir -p` as an optional flag. Other variants keep their normal rule/default decision. Bash paths are lexical; filesystem symlink targets are not discovered, and no command is executed. Supply `resolvedPath` when modelling an Edit symlink.
+
 The matching semantics come from the Claude Code [permissions](https://code.claude.com/docs/en/permissions), [settings](https://code.claude.com/docs/en/settings), [managed settings](https://code.claude.com/docs/en/managed-settings), and [hooks](https://code.claude.com/docs/en/hooks) pages. Where the docs state a rule exactly, the tool follows it; where behaviour is described only in prose, the tool labels its reading as inferred in [docs/semantics.md](docs/semantics.md). Because the docs can change between Claude Code versions, treat a decision from this tool as a close model, not a guarantee, and confirm a specific case with `/permissions` in Claude Code.
 
 ## Frequently asked questions

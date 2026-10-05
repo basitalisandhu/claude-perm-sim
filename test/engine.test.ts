@@ -36,6 +36,37 @@ function rs(lists: { allow?: string[]; ask?: string[]; deny?: string[] }): RuleS
 }
 
 describe('evaluation order: deny, then ask, then allow', () => {
+  it('models acceptEdits only for edits and simple filesystem commands in working directories', () => {
+    const set = rs({});
+    set.mode = 'acceptEdits';
+    for (const call of ['Edit(src/app.ts)', 'Bash(mkdir build)', 'Bash(touch notes.txt)', 'Bash(cp a.txt b.txt)', 'Bash(mv a.txt b.txt)']) {
+      const verdict = evaluate(parseCall(call), set);
+      expect(verdict.decision).toBe('allow');
+      expect(verdict.decidedBy[0].builtin).toContain('acceptEdits');
+    }
+    for (const call of ['Edit(/outside/app.ts)', 'Bash(mkdir /outside)', 'Bash(cp /outside/a b)', 'Bash(mkdir x && curl https://example.com)', 'Bash(touch -r /outside/x a)']) {
+      expect(decide(set, call)).toBe('default');
+    }
+    expect(decide(rs({}), 'Edit(src/app.ts)')).toBe('default');
+    set.additionalDirectories.push({ dir: '/extra', raw: '/extra', source: { scope: 'cli', file: 'test', anchor: '/project' } });
+    expect(decide(set, 'Edit(/extra/file)')).toBe('allow');
+  });
+
+  it('does not let acceptEdits override deny, ask or a resolved symlink outside the working directory', () => {
+    for (const list of ['deny', 'ask'] as const) {
+      const set = rs({ [list]: ['Edit(./secret.txt)', 'Bash(mkdir private)'] });
+      set.mode = 'acceptEdits';
+      expect(decide(set, 'Edit(secret.txt)')).toBe(list);
+      expect(decide(set, 'Bash(mkdir private)')).toBe(list);
+      expect(decide(set, 'Bash(touch secret.txt)')).toBe(list);
+    }
+    const set = rs({});
+    set.mode = 'acceptEdits';
+    expect(evaluate({ tool: 'Edit', input: { file_path: 'link' }, resolvedPath: '/outside/file' }, set).decision).toBe('default');
+    for (const command of ['touch $HOME/file', 'touch *.txt', 'touch a > log', 'sudo mkdir x', 'touch "$(id)"']) {
+      expect(decide(set, `Bash(${command})`)).toBe('default');
+    }
+  });
   it('deny beats a more specific allow', () => {
     const set = rs({ allow: ['Bash(git push origin main)'], deny: ['Bash(git push *)'] });
     expect(decide(set, 'Bash(git push origin main)')).toBe('deny');

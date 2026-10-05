@@ -95,7 +95,7 @@ field (`command`, `file_path`, `url`, ...) is inert.
 
 ## Not modelled
 
-Permission modes beyond Manual (acceptEdits, plan, auto, dontAsk, bypassPermissions) and the auto-mode
+Permission modes beyond default and the conservative explicit acceptEdits subset (plan, auto, dontAsk, bypassPermissions) and the auto-mode
 classifier; sandbox interactions; PreToolUse hook decisions and mod answers; `requiresUserInteraction` and
 organisation connector `ask` overrides (noted in output and the README, not applied as decisions); Windows
 path normalisation beyond forward-slash handling; and the read-only Manual-mode exceptions listed above.

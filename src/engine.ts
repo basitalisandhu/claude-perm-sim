@@ -138,6 +138,20 @@ function pathCall(tool: string, p: string): ToolCall {
 
 const rulesFor = (set: RuleSet, list: ListName): Rule[] => set.rules.filter((r) => r.list === list);
 
+/** Conservative subset of acceptEdits: one literal filesystem command, no expansion or redirects. */
+function modeFiles(command: string): string[] {
+  const parsed = parseCommand(command);
+  if (parsed.unparseable || parsed.commands.length !== 1) return [];
+  const cmd = parsed.commands[0];
+  if (cmd.nested || cmd.redirects.length || /[$`*?[\]{}~]/.test(command)) return [];
+  const [program, ...args] = cmd.words;
+  if (!['mkdir', 'touch', 'mv', 'cp'].includes(program)) return [];
+  const paths = args.filter((arg) => !(program === 'mkdir' && arg === '-p'));
+  if (paths.some((arg) => !arg || arg.startsWith('-'))) return [];
+  if (paths.length < (program === 'cp' || program === 'mv' ? 2 : 1)) return [];
+  return paths;
+}
+
 function bashMatches(set: RuleSet, list: ListName, command: string, call: ToolCall): { matches: Match[]; uncovered: string[]; steps: Step[]; unparseable: boolean; reasons: string[] } {
   const parsed = parseCommand(command);
   const rules = rulesFor(set, list);
@@ -145,6 +159,7 @@ function bashMatches(set: RuleSet, list: ListName, command: string, call: ToolCa
   const steps: Step[] = [];
   const uncovered: string[] = [];
   const forAllow = list === 'allow';
+  const modePaths = set.mode === 'acceptEdits' ? modeFiles(command) : [];
 
   const toolLevel = rules.filter((r) => (r.tool === 'Bash' || (r.tool.includes('*') && r.tool !== 'Bash')) && ruleMatchesCall(r, call, set) && (r.specifier === undefined || r.specifier === '*' || paramRule('Bash', r.specifier) !== undefined));
   for (const r of toolLevel) matches.push({ rule: r, subject: command });
@@ -173,6 +188,11 @@ function bashMatches(set: RuleSet, list: ListName, command: string, call: ToolCa
       const hits = bashRules.filter((r) => bashPatternMatches(r.specifier!, s.text));
       for (const r of hits) matches.push({ rule: r, subject: s.text });
       const files = fileArguments(s);
+      // Mode candidates must still consult explicit path restrictions.
+      if (modePaths.length) {
+        files.read.push(...modePaths);
+        files.write.push(...modePaths);
+      }
       const fileHits: Match[] = [];
       for (const f of files.read) {
         const m = fileCheck('Read', f);
@@ -189,11 +209,15 @@ function bashMatches(set: RuleSet, list: ListName, command: string, call: ToolCa
         else {
           const ro = readOnlyReason(s);
           if (ro) steps.push({ decision: 'allow', builtin: ro, subject: s.text });
+          else if (modePaths.length && modePaths.every((p) => insideWorkingDirs(set, resolveRequestedPath(p, ctxOf(set))))) {
+            steps.push({ decision: 'allow', builtin: 'acceptEdits filesystem command inside working directories', subject: s.text });
+          }
           else uncovered.push(s.text);
         }
         for (const f of files.write) {
           if (fileHits.some((h) => h.subject === `writes ${f}`)) continue;
-          if (toolLevel.length === 0) uncovered.push(`${s.program} writes ${f}`);
+          const modeAllowed = modePaths.length > 0 && modePaths.every((p) => insideWorkingDirs(set, resolveRequestedPath(p, ctxOf(set))));
+          if (toolLevel.length === 0 && !modeAllowed) uncovered.push(`${s.program} writes ${f}`);
         }
       }
     }
@@ -296,6 +320,16 @@ export function evaluate(call: ToolCall, set: RuleSet): Verdict {
         decidedBy: [{ decision: list, rule: first, subject: describeCall(call) }],
         alsoMatched: matched.filter((r) => r !== first),
         notes,
+      };
+    }
+  }
+  if (set.mode === 'acceptEdits' && EDIT_TOOLS.has(call.tool) && callPath(call) !== undefined) {
+    const targets = [callPath(call)!, ...(call.resolvedPath === undefined ? [] : [call.resolvedPath])];
+    if (targets.every((p) => insideWorkingDirs(set, resolveRequestedPath(p, ctxOf(set))))) {
+      return {
+        call, decision: 'allow',
+        decidedBy: [{ decision: 'allow', builtin: 'acceptEdits edit inside working directories', subject: describeCall(call) }],
+        alsoMatched: [], notes,
       };
     }
   }
