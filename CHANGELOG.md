@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-09
+
 ### Added
 
 - Add explicit `--mode default|acceptEdits`, preserving deny/ask precedence and limiting implicit filesystem approval to working directories outside static protected paths.
@@ -28,5 +30,6 @@ First release. Published to two registries on GitHub Packages, using only the wo
 - A matching engine modelling the documented Bash splitting, wrappers, read-only commands and redirections; Read and Edit path anchoring, depth rules, `!` carve-outs and symlink handling; WebFetch domain matching; and MCP and parameter rules. Behaviour inferred from prose is labelled in `docs/semantics.md`.
 - Test suite with tight and permissive fixture rule sets, CI on Node 20 and 22, a container image published on version tags, and a guarded npmjs release workflow.
 
-[Unreleased]: https://github.com/basitalisandhu/claude-perm-sim/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/basitalisandhu/claude-perm-sim/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/basitalisandhu/claude-perm-sim/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/basitalisandhu/claude-perm-sim/releases/tag/v0.1.0

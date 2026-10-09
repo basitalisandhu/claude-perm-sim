@@ -37,7 +37,7 @@ Point the `@basitalisandhu` scope at GitHub Packages in `~/.npmrc` (GitHub's npm
 
 ```bash
 npx @basitalisandhu/claude-perm-sim load                 # run without installing
-npm install -g @basitalisandhu/claude-perm-sim@0.1.0     # or install the claude-perm-sim command
+npm install -g @basitalisandhu/claude-perm-sim@0.2.0     # or install the claude-perm-sim command
 ```
 
 ### Container image
@@ -45,7 +45,7 @@ npm install -g @basitalisandhu/claude-perm-sim@0.1.0     # or install the claude
 The image runs as the non-root `node` user with `/work` as the working directory; mount your project there:
 
 ```bash
-docker run --rm -v "$PWD:/work" ghcr.io/basitalisandhu/claude-perm-sim:0.1.0 load
+docker run --rm -v "$PWD:/work" ghcr.io/basitalisandhu/claude-perm-sim:0.2.0 load
 ```
 
 ## Quickstart

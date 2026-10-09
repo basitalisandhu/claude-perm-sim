@@ -1,6 +1,6 @@
 {
   "name": "@basitalisandhu/claude-perm-sim",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Claude Code permission rule simulator: load the merged settings, see which rule decides any tool call, and find where the rules are more permissive than they look.",
   "license": "MIT",
   "author": "Muhammad Basit Ali",
