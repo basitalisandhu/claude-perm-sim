@@ -93,9 +93,32 @@ an `mcp__` rule with parentheses are inert. Tool-name globs in deny and ask (`*`
 `Agent(param:value)` and other parameter rules apply to deny and ask only; a rule naming a primary content
 field (`command`, `file_path`, `url`, ...) is inert.
 
+## acceptEdits (modelled)
+
+`--mode acceptEdits` auto-approves edits only inside the working directory or
+additional directories, checking both the requested and supplied resolved path.
+Explicit deny and ask rules still win. A recorded `defaultMode` does not select
+the simulation mode.
+
+The filesystem-command subset is **inferred** from the
+[permission-mode documentation](https://code.claude.com/docs/en/permission-modes):
+one literal `mkdir`, `touch`, `mv` or `cp` command, only `mkdir -p` as an optional
+flag, with in-directory paths and no wrappers, substitutions, globs or redirects.
+Bash paths are lexical: no command is executed and symlink targets are not
+discovered. Supply `resolvedPath` when modelling an Edit symlink.
+
+Implicit mode approval excludes the documented static
+[protected paths](https://code.claude.com/docs/en/permission-modes#protected-paths),
+including `.git`, `.config/git`, editor/build configuration directories, `.claude`
+except `.claude/worktrees`, and protected configuration filenames such as
+`.mcp.json`. Nested protected paths inside a worktree remain excluded.
+These calls retain their normal rule/default decision. This change does not
+model the host's separate safety gate ahead of explicit allow rules, dynamically
+loaded plugin directories, or the session-dependent auto-memory exception.
+
 ## Not modelled
 
-Permission modes beyond Manual (acceptEdits, plan, auto, dontAsk, bypassPermissions) and the auto-mode
+Permission modes plan, auto, dontAsk, bypassPermissions and the auto-mode
 classifier; sandbox interactions; PreToolUse hook decisions and mod answers; `requiresUserInteraction` and
 organisation connector `ask` overrides (noted in output and the README, not applied as decisions); Windows
 path normalisation beyond forward-slash handling; and the read-only Manual-mode exceptions listed above.

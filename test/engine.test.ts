@@ -36,6 +36,75 @@ function rs(lists: { allow?: string[]; ask?: string[]; deny?: string[] }): RuleS
 }
 
 describe('evaluation order: deny, then ask, then allow', () => {
+  it.each([
+    'Write(.git/hooks/pre-commit)',
+    'Bash(cp a.txt .git/hooks/pre-commit)',
+    'Edit(.claude/settings.json)',
+    'Edit(.mcp.json)',
+    'Write(.config/git/config)',
+    'Edit(.cargo/config.toml)',
+    'Write(gradle-wrapper.properties)',
+    'Edit(nested/.vscode/settings.json)',
+    'Write(.idea/workspace.xml)',
+    'Bash(touch .husky/pre-commit)',
+    'Write(.bashrc)',
+    'Edit(nested/.npmrc)',
+    'Edit(.claude/worktrees/task/.git/config)',
+  ])('does not automatically allow protected paths: %s', (call) => {
+    const set = rs({});
+    set.mode = 'acceptEdits';
+    expect(decide(set, call)).toBe('default');
+  });
+
+  it('checks resolved protected paths while permitting ordinary worktree files', () => {
+    const set = rs({});
+    set.mode = 'acceptEdits';
+    expect(evaluate({ tool: 'Edit', input: { file_path: 'link' }, resolvedPath: '/project/.git/config' }, set).decision).toBe('default');
+    for (const call of ['Edit(.claude/worktrees/task/src/app.ts)', 'Bash(touch .claude/worktrees/task/notes.txt)', 'Edit(.gitignore)', 'Edit(.claude-notes/file)', 'Edit(.config/github/config)', 'Bash(mv a.txt ../b.txt)']) {
+      expect(decide(set, call)).toBe(call.includes('../') ? 'default' : 'allow');
+    }
+  });
+
+  it('preserves explicit protected-path deny and ask decisions', () => {
+    for (const list of ['deny', 'ask'] as const) {
+      const set = rs({ [list]: ['Edit(.git/**)'] });
+      set.mode = 'acceptEdits';
+      expect(decide(set, 'Write(.git/hooks/pre-commit)')).toBe(list);
+      expect(decide(set, 'Bash(cp a.txt .git/hooks/pre-commit)')).toBe(list);
+    }
+  });
+
+  it('models acceptEdits only for edits and simple filesystem commands in working directories', () => {
+    const set = rs({});
+    set.mode = 'acceptEdits';
+    for (const call of ['Edit(src/app.ts)', 'Bash(mkdir build)', 'Bash(touch notes.txt)', 'Bash(cp a.txt b.txt)', 'Bash(mv a.txt b.txt)']) {
+      const verdict = evaluate(parseCall(call), set);
+      expect(verdict.decision).toBe('allow');
+      expect(verdict.decidedBy[0].builtin).toContain('acceptEdits');
+    }
+    for (const call of ['Edit(/outside/app.ts)', 'Bash(mkdir /outside)', 'Bash(cp /outside/a b)', 'Bash(mkdir x && curl https://example.com)', 'Bash(touch -r /outside/x a)']) {
+      expect(decide(set, call)).toBe('default');
+    }
+    expect(decide(rs({}), 'Edit(src/app.ts)')).toBe('default');
+    set.additionalDirectories.push({ dir: '/extra', raw: '/extra', source: { scope: 'cli', file: 'test', anchor: '/project' } });
+    expect(decide(set, 'Edit(/extra/file)')).toBe('allow');
+  });
+
+  it('does not let acceptEdits override deny, ask or a resolved symlink outside the working directory', () => {
+    for (const list of ['deny', 'ask'] as const) {
+      const set = rs({ [list]: ['Edit(./secret.txt)', 'Bash(mkdir private)'] });
+      set.mode = 'acceptEdits';
+      expect(decide(set, 'Edit(secret.txt)')).toBe(list);
+      expect(decide(set, 'Bash(mkdir private)')).toBe(list);
+      expect(decide(set, 'Bash(touch secret.txt)')).toBe(list);
+    }
+    const set = rs({});
+    set.mode = 'acceptEdits';
+    expect(evaluate({ tool: 'Edit', input: { file_path: 'link' }, resolvedPath: '/outside/file' }, set).decision).toBe('default');
+    for (const command of ['touch $HOME/file', 'touch *.txt', 'touch a > log', 'sudo mkdir x', 'touch "$(id)"']) {
+      expect(decide(set, `Bash(${command})`)).toBe('default');
+    }
+  });
   it('deny beats a more specific allow', () => {
     const set = rs({ allow: ['Bash(git push origin main)'], deny: ['Bash(git push *)'] });
     expect(decide(set, 'Bash(git push origin main)')).toBe('deny');

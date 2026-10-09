@@ -50,6 +50,7 @@ Settings sources (override the files that are read):
   --untrusted              Model a folder whose workspace trust was not accepted
 
 Options:
+  --mode <mode>            Explicit simulation mode: default (default), acceptEdits
   --format <fmt>           table (default), json, sarif, hook
   --mcp-tool <name>        Known MCP tool to check coverage of in bypass (repeatable)
   --mcp-from <file>        Read MCP server names from a .mcp.json for bypass coverage
@@ -68,6 +69,7 @@ export interface CliOptions {
   positionals: string[];
   load: LoadOptions;
   format: Format;
+  mode: 'default' | 'acceptEdits';
   mcpTools: string[];
   mcpFrom?: string;
   failOn: Severity;
@@ -87,6 +89,7 @@ export function parseArgs(argv: string[]): CliOptions {
     positionals: [],
     load: { project: process.cwd(), settings: [], allowedTools: [], disallowedTools: [] },
     format: 'table',
+    mode: 'default',
     mcpTools: [],
     failOn: 'high',
     exe: 'claude-perm-sim',
@@ -142,6 +145,12 @@ export function parseArgs(argv: string[]): CliOptions {
         const f = val();
         if (!['table', 'json', 'sarif', 'hook'].includes(f)) throw new UsageError(`unknown format: ${f}`);
         opts.format = f as Format;
+        break;
+      }
+      case '--mode': {
+        const mode = val();
+        if (mode !== 'default' && mode !== 'acceptEdits') throw new UsageError(`unknown mode: ${mode}`);
+        opts.mode = mode;
         break;
       }
       case '--mcp-tool':
@@ -202,27 +211,28 @@ export function run(argv: string[]): RunResult {
   }
 
   try {
+    const load = () => ({ ...loadRuleSet(opts.load), mode: opts.mode });
     switch (opts.command) {
       case 'load': {
-        const set = loadRuleSet(opts.load);
+        const set = load();
         return { stdout: formatLoad(set, opts.format) + '\n', stderr: '', code: 0 };
       }
       case 'explain': {
         if (opts.positionals.length === 0) throw new UsageError('explain needs a tool call, for example explain "Edit(src/app.ts)"');
-        const set = loadRuleSet(opts.load);
+        const set = load();
         const call = parseCall(opts.positionals.join(' '));
         const verdict = evaluate(call, set);
         return { stdout: formatExplain(verdict, opts.format) + '\n', stderr: '', code: 0 };
       }
       case 'bypass': {
-        const set = loadRuleSet(opts.load);
+        const set = load();
         const findings = findBypasses(set, mcpContext(opts));
         const out = formatFindings(findings, opts.format, 'bypass', VERSION);
         const code = exitForFindings(findings.map((f) => f.severity), opts.failOn);
         return { stdout: out + '\n', stderr: '', code };
       }
       case 'lint': {
-        const set = loadRuleSet(opts.load);
+        const set = load();
         const findings = lint(set);
         const out = formatFindings(findings, opts.format, 'lint', VERSION);
         const code = exitForFindings(findings.map((f) => f.severity), opts.failOn);
@@ -234,6 +244,8 @@ export function run(argv: string[]): RunResult {
         for (const f of [aFile, bFile]) if (!existsSync(f)) throw new SettingsError(`settings file not found: ${f}`);
         const a = ruleSetFromFile(aFile, opts.load.project, opts.load.home);
         const b = ruleSetFromFile(bFile, opts.load.project, opts.load.home);
+        a.mode = opts.mode;
+        b.mode = opts.mode;
         const flips = diffRuleSets(a, b);
         return { stdout: formatDiff(flips, opts.format, path.basename(aFile), path.basename(bFile)) + '\n', stderr: '', code: 0 };
       }

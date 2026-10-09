@@ -95,6 +95,8 @@ Each finding names the rule, the weakness class, and a tighter rule, and uses an
 
 ## How matching is modelled
 
+Use `--mode acceptEdits` to simulate in-directory edits and a conservative filesystem-command subset, excluding static protected paths from implicit approval; explicit deny and ask rules still win. The default remains `--mode default`; see [acceptEdits semantics and limitations](docs/semantics.md#acceptedits-modelled) for the inferred subset, protected-path exceptions and symlink boundaries.
+
 The matching semantics come from the Claude Code [permissions](https://code.claude.com/docs/en/permissions), [settings](https://code.claude.com/docs/en/settings), [managed settings](https://code.claude.com/docs/en/managed-settings), and [hooks](https://code.claude.com/docs/en/hooks) pages. Where the docs state a rule exactly, the tool follows it; where behaviour is described only in prose, the tool labels its reading as inferred in [docs/semantics.md](docs/semantics.md). Because the docs can change between Claude Code versions, treat a decision from this tool as a close model, not a guarantee, and confirm a specific case with `/permissions` in Claude Code.
 
 ## Frequently asked questions

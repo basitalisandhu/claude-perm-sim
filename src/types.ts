@@ -32,6 +32,8 @@ export interface Rule extends ParsedRule {
 }
 
 export interface RuleSet {
+  /** Explicit simulated mode, independent of recorded defaultMode settings. */
+  mode?: 'default' | 'acceptEdits';
   rules: Rule[];
   sources: Source[];
   /** Absolute directories from `permissions.additionalDirectories`, with the source of each. */
