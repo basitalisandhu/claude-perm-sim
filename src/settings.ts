@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseRule } from './rules.js';
 import type { ListName, Rule, RuleSet, Scope, Source } from './types.js';
-import { LIST_ORDER, SCOPE_ORDER } from './types.js';
+import { LIST_ORDER, PERMISSION_MODES, SCOPE_ORDER } from './types.js';
 
 export class SettingsError extends Error {}
 
@@ -54,8 +54,11 @@ interface SettingsDoc {
     deny?: unknown;
     additionalDirectories?: unknown;
     defaultMode?: unknown;
+    disableBypassPermissionsMode?: unknown;
+    disableAutoMode?: unknown;
   };
   allowManagedPermissionRulesOnly?: unknown;
+  disableAutoMode?: unknown;
 }
 
 export function readSettings(file: string): SettingsDoc | undefined {
@@ -161,8 +164,27 @@ export function loadRuleSet(opts: LoadOptions): RuleSet {
         additionalDirectories.push({ raw, dir: path.resolve(project, expandHome(raw, home)), source });
       }
     }
-    if (typeof perms.defaultMode === 'string' && defaultMode === undefined) {
-      defaultMode = { value: perms.defaultMode, source };
+    if (perms.defaultMode !== undefined) {
+      const mode = perms.defaultMode;
+      if (typeof mode !== 'string' || !PERMISSION_MODES.includes(mode)) {
+        warnings.push(`${source.file}: permissions.defaultMode ${JSON.stringify(mode)} is not a permission mode (${PERMISSION_MODES.join(', ')}); ignored`);
+      } else if ((mode === 'auto' || mode === 'bypassPermissions') && (source.scope === 'project' || source.scope === 'local')) {
+        // https://code.claude.com/docs/en/settings-reference#permissions-defaultmode
+        warnings.push(`${source.file}: permissions.defaultMode "${mode}" does not take effect from ${source.scope} settings; set it in user or managed settings`);
+      } else if (defaultMode === undefined) {
+        defaultMode = { value: mode === 'manual' ? 'default' : mode, source };
+      }
+    }
+    // Both keys take only the string "disable": https://code.claude.com/docs/en/settings-reference
+    const disableKeys: [string, unknown][] = [
+      ['permissions.disableBypassPermissionsMode', perms.disableBypassPermissionsMode],
+      ['permissions.disableAutoMode', perms.disableAutoMode],
+      ['disableAutoMode', doc.disableAutoMode],
+    ];
+    for (const [key, value] of disableKeys) {
+      if (value !== undefined && value !== 'disable') {
+        warnings.push(`${source.file}: ${key} is ${JSON.stringify(value)}, but only the string "disable" turns the mode off; this value has no effect`);
+      }
     }
   }
   if (flagRules.length > 0) {

@@ -62,3 +62,78 @@ describe('command splitting', () => {
     expect(programs('for f in a b; do rm "$f"; done')).toContain('rm');
   });
 });
+
+describe('parser edge cases', () => {
+  const p = parseCommand;
+  it('splits on |& and a background &', () => {
+    expect(programs('make |& tee log & echo hi')).toEqual(['make', 'tee', 'echo']);
+  });
+  it('marks a dangling | unparseable', () => {
+    expect(p('ls |').unparseable).toBe(true);
+  });
+  it('reports an unterminated here-document', () => {
+    expect(p('cat <<EOF\nbody').reasons).toContain('here-document is not terminated');
+  });
+  it('accepts a tab-indented terminator for <<-', () => {
+    const r = p('cat <<-EOF\n\tbody\n\tEOF\nls');
+    expect(r.unparseable).toBe(false);
+    expect(r.commands.map((c) => c.words[0])).toEqual(['cat', 'ls']);
+  });
+  it('records a here-string without a file target', () => {
+    const r = p('grep x <<< "text"');
+    expect(r.commands[0].redirects).toEqual([{ op: '<<<' }]);
+  });
+  it('records &> and >> targets', () => {
+    expect(p('make &> all.log').commands[0].redirects[0]).toEqual({ op: '&>', target: 'all.log' });
+    expect(p('echo a >> out').commands[0].redirects[0]).toEqual({ op: '>>', target: 'out' });
+  });
+  it('treats >& with a file name as a file target', () => {
+    expect(p('make >& build.log').commands[0].redirects[0]).toEqual({ op: '>&', target: 'build.log' });
+  });
+  it('reports a redirect with no target', () => {
+    expect(p('echo hi >').reasons[0]).toMatch(/has no target/);
+  });
+  it('keeps a redirect-only command so its target is still checked', () => {
+    const r = p('> out.txt');
+    expect(r.commands[0].words).toEqual([]);
+    expect(r.commands[0].redirects[0].target).toBe('out.txt');
+  });
+  it('does not parse an arithmetic expansion as a command', () => {
+    expect(programs('echo $((1 + 2))')).toEqual(['echo']);
+  });
+  it('finds commands in process substitutions', () => {
+    expect(programs('diff <(sort a) >(tee b)')).toEqual(['sort', 'tee', 'diff']);
+  });
+  it('finds a backtick command inside double quotes', () => {
+    expect(programs('echo "now `date`"')).toContain('date');
+  });
+  it('follows a line continuation', () => {
+    expect(p('npm \\\n test').commands[0].words).toEqual(['npm', 'test']);
+  });
+  it.each([
+    ['echo $(ls', 'unbalanced $('],
+    ['echo `ls', 'unbalanced backtick'],
+    ['echo "a', 'unbalanced double quote'],
+    ['(ls', 'unbalanced ('],
+    ['diff <(ls', 'unbalanced <('],
+    ['ls )', 'unexpected )'],
+    ['case x in a) ls;; esac', 'case constructs are not followed'],
+    ['f() { ls; }', 'unexpected )'],
+    ['function f { ls; }', 'function constructs are not followed'],
+  ])('marks %s unparseable', (src, reason) => {
+    const r = p(src);
+    expect(r.unparseable).toBe(true);
+    expect(r.reasons).toContain(reason);
+  });
+  it('strips control-flow keywords and skips a while header body correctly', () => {
+    expect(programs('if test -f a; then rm a; else touch a; fi')).toEqual(['test', 'rm', 'touch']);
+  });
+  it('marks nested commands', () => {
+    const r = p('echo $(whoami)');
+    expect(r.commands.find((c) => c.words[0] === 'whoami')?.nested).toBe(true);
+    expect(r.commands.find((c) => c.words[0] === 'echo')?.nested).toBe(false);
+  });
+  it('handles an escaped quote inside double quotes', () => {
+    expect(p('echo "a \\" b"').commands[0].words).toEqual(['echo', 'a \\" b']);
+  });
+});

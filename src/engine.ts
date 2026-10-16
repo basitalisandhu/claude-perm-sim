@@ -1,4 +1,4 @@
-import { bashPatternMatches, fileArguments, readOnlyReason, stripCommand } from './bash.js';
+import { bashPatternMatches, fileArguments, readOnlyReason, stripCommand, wildcardCannotApprove } from './bash.js';
 import { domainOfSpecifier, domainPatternMatches, hostOf } from './domains.js';
 import { isInside, pathRuleMatches, resolveRequestedPath, type PathContext } from './paths.js';
 import { PRIMARY_FIELDS, UNCONSULTED_PATH_TOOLS, paramRule, splitMcpName, starGlobToRegex } from './rules.js';
@@ -174,8 +174,9 @@ function modeFiles(command: string): string[] {
   return paths;
 }
 
-function bashMatches(set: RuleSet, list: ListName, command: string, call: ToolCall): { matches: Match[]; uncovered: string[]; steps: Step[]; unparseable: boolean; reasons: string[] } {
+function bashMatches(set: RuleSet, list: ListName, command: string, call: ToolCall): { matches: Match[]; uncovered: string[]; steps: Step[]; unparseable: boolean; reasons: string[]; notes: string[] } {
   const parsed = parseCommand(command);
+  const notes: string[] = [];
   const rules = rulesFor(set, list);
   const matches: Match[] = [];
   const steps: Step[] = [];
@@ -197,7 +198,7 @@ function bashMatches(set: RuleSet, list: ListName, command: string, call: ToolCa
   if (forAllow && parsed.unparseable) {
     if (toolLevel.length === 0) uncovered.push(command);
     else steps.push({ decision: 'allow', rule: toolLevel[0], subject: command });
-    return { matches, uncovered, steps, unparseable: true, reasons: parsed.reasons };
+    return { matches, uncovered, steps, unparseable: true, reasons: parsed.reasons, notes };
   }
 
   if (!forAllow && parsed.unparseable) {
@@ -207,7 +208,16 @@ function bashMatches(set: RuleSet, list: ListName, command: string, call: ToolCa
   for (const cmd of parsed.commands) {
     const s = stripCommand(cmd, forAllow);
     if (s.text !== '') {
-      const hits = bashRules.filter((r) => bashPatternMatches(r.specifier!, s.text));
+      let hits = bashRules.filter((r) => bashPatternMatches(r.specifier!, s.text));
+      if (forAllow) {
+        // Exec wrappers and find actions: a wildcard allow rule cannot approve them, only an exact rule.
+        const blocked = wildcardCannotApprove(s);
+        if (blocked) {
+          const exact = hits.filter((r) => !r.specifier!.includes('*'));
+          if (exact.length < hits.length) notes.push(blocked);
+          hits = exact;
+        }
+      }
       for (const r of hits) matches.push({ rule: r, subject: s.text });
       const files = fileArguments(s);
       // Mode candidates must still consult explicit path restrictions.
@@ -266,7 +276,7 @@ function bashMatches(set: RuleSet, list: ListName, command: string, call: ToolCa
       uncovered.push(`redirect ${r.op} ${r.target}`);
     }
   }
-  return { matches, uncovered, steps, unparseable: false, reasons: parsed.reasons };
+  return { matches, uncovered, steps, unparseable: false, reasons: parsed.reasons, notes };
 }
 
 function uniqueRules(ms: Match[]): Rule[] {
@@ -275,14 +285,31 @@ function uniqueRules(ms: Match[]): Rule[] {
   return out;
 }
 
-/** Evaluate one tool call against the merged rule set: deny, then ask, then allow, first match wins. */
+/**
+ * Evaluate one tool call against the merged rule set: deny, then ask, then allow, first match wins. In
+ * `dontAsk` mode a call that would prompt is denied instead
+ * (https://code.claude.com/docs/en/permissions#permission-modes).
+ */
 export function evaluate(call: ToolCall, set: RuleSet): Verdict {
+  const v = evaluateRules(call, set);
+  if (set.mode === 'dontAsk' && (v.decision === 'ask' || v.decision === 'default')) {
+    return {
+      ...v,
+      decision: 'deny',
+      decidedBy: [{ decision: 'deny', builtin: `dontAsk mode denies a call that would otherwise prompt (${decisionLabel(v.decision)})`, subject: describeCall(call) }, ...v.decidedBy],
+    };
+  }
+  return v;
+}
+
+function evaluateRules(call: ToolCall, set: RuleSet): Verdict {
   const notes: string[] = [];
   if (call.tool === 'Bash') {
     const command = typeof call.input.command === 'string' ? call.input.command : '';
     const deny = bashMatches(set, 'deny', command, call);
     const ask = bashMatches(set, 'ask', command, call);
     const allow = bashMatches(set, 'allow', command, call);
+    notes.push(...allow.notes);
     if (allow.unparseable) notes.push(`command could not be split (${allow.reasons.join('; ')}), so allow rules do not apply`);
     const all = [...deny.matches, ...ask.matches];
     const allowRules = allow.steps.filter((s) => s.rule).map((s) => s.rule!);
@@ -322,6 +349,15 @@ export function evaluate(call: ToolCall, set: RuleSet): Verdict {
   const matched: Rule[] = [];
   for (const r of set.rules) {
     if (ruleMatchesCall(r, call, set)) matched.push(r);
+  }
+  // A deny rule cannot remove EndConversation while any other tool remains, and an ask rule never
+  // prompts for it: https://code.claude.com/docs/en/permissions#manage-permissions
+  if (call.tool === 'EndConversation') {
+    const held = matched.filter((r) => r.list !== 'allow');
+    if (held.length > 0) {
+      notes.push(`deny and ask rules do not apply to EndConversation: ${held.map((r) => r.raw).join(', ')}`);
+      matched.splice(0, matched.length, ...matched.filter((r) => r.list === 'allow'));
+    }
   }
   // A Read deny rule also blocks Edit and Write on the same path (NotebookEdit is not covered).
   if (EDIT_TOOLS.has(call.tool) && call.tool !== 'NotebookEdit') {

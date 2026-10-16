@@ -138,10 +138,37 @@ export function bashPrefix(specifier: string): string {
 const READ_ONLY = new Set(['ls', 'cat', 'echo', 'pwd', 'head', 'tail', 'grep', 'find', 'wc', 'which', 'diff', 'stat', 'du', 'cd']);
 const GIT_READ_ONLY = new Set(['status', 'log', 'diff', 'show', 'rev-parse', 'blame', 'ls-files', 'describe', 'shortlog']);
 
+/**
+ * `find` primaries that run commands, delete or write files, or read the paths to search from a file.
+ * https://code.claude.com/docs/en/permissions#exec-wrappers-and-find-actions names `-exec`, `-delete`,
+ * `-fprint` and `-files0-from`; the rest of each family is inferred from GNU find.
+ */
+export const FIND_ACTIONS = new Set(['-exec', '-execdir', '-ok', '-okdir', '-delete', '-fprint', '-fprint0', '-fprintf', '-fls', '-files0-from']);
+
+/**
+ * Exec wrappers a prefix rule cannot auto-approve. The docs list `watch`, `setsid`, `ionice` and `flock`
+ * ("such as"), so the set may be longer in Claude Code itself.
+ */
+export const EXEC_WRAPPERS = new Set(['watch', 'setsid', 'ionice', 'flock']);
+
+/**
+ * Why a wildcard allow rule cannot approve this command, or undefined when it can. For exec wrappers and
+ * `find` with an action, only an exact rule with no `*` approves the command
+ * (https://code.claude.com/docs/en/permissions#exec-wrappers-and-find-actions).
+ */
+export function wildcardCannotApprove(s: Stripped): string | undefined {
+  if (EXEC_WRAPPERS.has(s.program)) return `${s.program} is an exec wrapper; only an exact rule with no * approves it`;
+  if (s.program === 'find') {
+    const action = s.words.find((w) => FIND_ACTIONS.has(w));
+    if (action) return `find with ${action}; only an exact rule with no * approves it`;
+  }
+  return undefined;
+}
+
 /** Returns a reason when the stripped command is a documented read-only command, otherwise undefined. */
 export function readOnlyReason(s: Stripped): string | undefined {
   if (s.program === 'find') {
-    if (s.words.some((w) => w === '-exec' || w === '-execdir' || w === '-delete' || w === '-ok')) return undefined;
+    if (s.words.some((w) => FIND_ACTIONS.has(w))) return undefined;
     return 'built-in read-only command (find)';
   }
   if (s.program === 'git') {
