@@ -1,0 +1,7 @@
+# Calls a reviewer wants decided against the tight fixture.
+Bash(npm run build)
+
+Bash(rm -rf build)
+{"tool_name":"Edit","tool_input":{"file_path":"src/app.ts"}}
+mcp__github__create_issue
+WebFetch(https://evil.example/x)

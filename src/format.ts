@@ -1,6 +1,7 @@
 import { decisionLabel, describeCall } from './engine.js';
 import type { Finding, Rule, RuleSet, Severity, Verdict } from './types.js';
 import type { Flip as FlipType } from './diff.js';
+import type { CallLine } from './call.js';
 
 export type Format = 'table' | 'json' | 'sarif' | 'hook';
 
@@ -91,6 +92,49 @@ export function formatExplain(verdict: Verdict, format: Format): string {
   }
   for (const n of verdict.notes) lines.push(`note: ${n}`);
   return lines.join('\n');
+}
+
+// ---- explain --from ----
+
+export interface BatchRow {
+  entry: CallLine;
+  verdict?: Verdict;
+}
+
+function decidingRule(v: Verdict): string {
+  const s = v.decidedBy.find((x) => x.rule) ?? v.decidedBy[0];
+  if (!s) return '';
+  return s.rule ? s.rule.raw : (s.builtin ?? '');
+}
+
+export function formatExplainBatch(rows: BatchRow[], format: Format): string {
+  if (format === 'json') {
+    return JSON.stringify(
+      rows.map(({ entry, verdict }) =>
+        verdict
+          ? {
+              line: entry.line,
+              call: describeCall(verdict.call),
+              decision: verdict.decision,
+              decidedBy: verdict.decidedBy.map((s) => ({ decision: s.decision, rule: s.rule?.raw, source: s.rule ? s.rule.source.file : undefined, scope: s.rule?.source.scope, builtin: s.builtin, subject: s.subject })),
+              notes: verdict.notes,
+            }
+          : { line: entry.line, input: entry.text, error: entry.error },
+      ),
+      null,
+      2,
+    );
+  }
+  const table = rows.map(({ entry, verdict }) => [
+    String(entry.line),
+    verdict ? decisionLabel(verdict.decision) : 'error',
+    verdict ? describeCall(verdict.call) : entry.text,
+    verdict ? decidingRule(verdict) : (entry.error ?? ''),
+  ]);
+  const header = ['line', 'decision', 'call', 'decided by'];
+  const widths = header.map((h, i) => Math.max(h.length, ...table.map((r) => r[i].length)));
+  const fmt = (r: string[]): string => r.map((c, i) => (i === r.length - 1 ? c : c.padEnd(widths[i]))).join('  ').trimEnd();
+  return [fmt(header), ...table.map(fmt)].join('\n');
 }
 
 // ---- findings (bypass, lint) ----

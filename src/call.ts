@@ -63,3 +63,29 @@ export function callFromSpecifier(tool: string, specifier: string | undefined): 
       return { tool, input: { primary: specifier } };
   }
 }
+
+/** One line of an `explain --from` file: the parsed call, or the error that line produced. */
+export interface CallLine {
+  line: number;
+  text: string;
+  call?: ToolCall;
+  error?: string;
+}
+
+/**
+ * Read one call per line (rule form or hook JSON). Blank lines and lines starting with `#` are skipped; a
+ * malformed line is returned with its error so the rest of the file is still decided.
+ */
+export function parseCallLines(content: string): CallLine[] {
+  const out: CallLine[] = [];
+  content.split(/\r?\n/).forEach((raw, i) => {
+    const text = raw.trim();
+    if (text === '' || text.startsWith('#')) return;
+    try {
+      out.push({ line: i + 1, text, call: parseCall(text) });
+    } catch (err) {
+      out.push({ line: i + 1, text, error: (err as Error).message });
+    }
+  });
+  return out;
+}

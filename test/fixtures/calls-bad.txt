@@ -1,0 +1,3 @@
+Bash(npm run test)
+{ not json
+Read(.env)

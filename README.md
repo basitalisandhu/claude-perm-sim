@@ -6,6 +6,32 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20%2B-blue.svg)](package.json)
 
+For developers and teams who hand-write Claude Code permission rules. Read-only, no runtime dependencies, Node 20 or newer. Part of a small set of Claude Code security tools listed at [basitalisandhu.github.io](https://basitalisandhu.github.io/), alongside [agent-config-audit](https://github.com/basitalisandhu/agent-config-audit) and [cc-plugin-lock](https://github.com/basitalisandhu/cc-plugin-lock).
+
+## Quick start
+
+No install and no token needed; run it from a project that has `.claude/settings.json`:
+
+```bash
+npx github:basitalisandhu/claude-perm-sim load                               # effective rules, with the file each came from
+npx github:basitalisandhu/claude-perm-sim explain "Bash(git push origin main)"  # which rule decides one call
+npx github:basitalisandhu/claude-perm-sim bypass                             # where an allow rule admits more than it names
+```
+
+Real output of `explain --from calls.txt`, which decides one call per line, for a project that allows `Bash(npm run *)`, `Bash(git commit *)` and `Edit(src/**)`, asks for `Bash(git push *)` and denies `Bash(rm *)` and `Read(.env)`:
+
+```text
+line  decision     call                                             decided by
+1     allow        Bash(npm run test)                               Bash(npm run *)
+2     deny         Bash(cd /tmp && rm -rf build)                    Bash(rm *)
+3     ask          Bash(git push origin main)                       Bash(git push *)
+4     default ask  Bash(npm run build && curl https://example.com)  no rule matched every part of the command
+5     deny         Read(.env)                                       Read(.env)
+6     allow        Edit(src/app.ts)                                 Edit(src/**)
+```
+
+Line 2 is denied because Claude Code splits compound commands and checks every part; line 4 prompts because `curl` has no allow rule of its own.
+
 ## What it does, who it is for, and why
 
 Claude Code decides every tool call against permission rules spread across managed, command-line, local, project, and user settings, evaluated deny first, then ask, then allow. The rules match the text the model writes, with wildcards, wrappers, compound-command splitting, and gitignore-style path anchoring, and the [docs say plainly](https://code.claude.com/docs/en/permissions) a Bash rule "isn't a security boundary around the program". That leaves two everyday questions hard to answer by reading the files: which rule actually decides a call, and where a rule you wrote admits more than you meant.
@@ -13,7 +39,7 @@ Claude Code decides every tool call against permission rules spread across manag
 claude-perm-sim answers both. It is for developers and teams who hand-write Claude Code permission rules and want to see the effective rule set, trace one decision, and catch a rule that is broader than it looks before it ships.
 
 - `load` merges the settings files in the documented precedence and prints the effective allow, ask, and deny lists with the source file of each rule.
-- `explain "<tool call>"` prints the decision and the exact rule and file that decided it, plus the rules that also matched but lost.
+- `explain "<tool call>"` prints the decision and the exact rule and file that decided it, plus the rules that also matched but lost. `explain --from <file>` decides a whole file of calls, one per line.
 - `bypass` reads your allow rules and reports, structurally, where one admits more than it names: a Bash prefix that runs an arbitrary inner command, an Edit or Read scope that resolves outside its directory, a WebFetch rule that admits subdomains or lookalikes, and MCP tools no rule covers. It does not generate attacks (see [What this is not](#what-this-is-not)).
 - `lint` runs static checks on the rule set: duplicates, allow rules shadowed by deny, overly broad patterns, rules that can never match, mixed slash styles, and allow rules that belong in ask.
 - `diff` shows what changed between two settings files in decision terms: which sample calls flip.
@@ -23,6 +49,8 @@ Output is `table` (default), `json`, or `sarif`; `--format hook` prints a PreToo
 ## Install
 
 Requires Node 20 or newer.
+
+The quickest route needs nothing but Node: `npx github:basitalisandhu/claude-perm-sim <command>` fetches the source from GitHub and builds it on first use (pin a release with `#v0.3.0`). The container image below also works without any login.
 
 Every release is published by `publish-github-packages.yml` in two places on GitHub Packages: the npm package `@basitalisandhu/claude-perm-sim` and the container image `ghcr.io/basitalisandhu/claude-perm-sim`. The package is not on npmjs.com yet; when it is, it will use the same scoped name.
 
@@ -48,7 +76,7 @@ The image runs as the non-root `node` user with `/work` as the working directory
 docker run --rm -v "$PWD:/work" ghcr.io/basitalisandhu/claude-perm-sim:0.2.0 load
 ```
 
-## Quickstart
+## Usage
 
 ```bash
 # From the root of a project that has .claude/settings.json:
@@ -61,11 +89,13 @@ claude-perm-sim lint                                  # static problems in the r
 claude-perm-sim diff before.json after.json           # which decisions change
 ```
 
-`explain` also reads the JSON a PreToolUse hook receives on stdin, so you can pass a real tool call:
+`explain` also takes the JSON a PreToolUse hook receives, so you can pass a real tool call:
 
 ```bash
 claude-perm-sim explain '{"tool_name":"Bash","tool_input":{"command":"npm run build"}}'
 ```
+
+To review a list of calls, put one per line in a file (rule form or hook JSON; blank lines and `#` comments are skipped) and pass `--from <file>`, or `--from -` for stdin. The table shows each line's decision and deciding rule, `--format json` prints an array, and a line that is not a tool call is reported with its line number (exit code 2) while the other lines are still decided.
 
 By default the tool reads the same files Claude Code does. Override any source with `--project <dir>`, `--user <file|none>`, `--local <file|none>`, `--managed <file|none>`, add one with `--settings <file>`, or inject command-line rules with `--allow-tool` and `--deny-tool`. Use `--untrusted` to model a folder whose workspace trust dialog was not accepted, where project allow rules are held back.
 
