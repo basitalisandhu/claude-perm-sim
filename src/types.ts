@@ -3,6 +3,12 @@ export type Scope = 'managed' | 'cli' | 'local' | 'project' | 'user';
 
 export const SCOPE_ORDER: readonly Scope[] = ['managed', 'cli', 'local', 'project', 'user'];
 
+/** Permission modes the simulator models. `manual` is accepted on the command line as an alias for `default`. */
+export type SimMode = 'default' | 'acceptEdits' | 'dontAsk';
+
+/** Every documented `permissions.defaultMode` value: https://code.claude.com/docs/en/settings-reference#permissions-defaultmode */
+export const PERMISSION_MODES: readonly string[] = ['default', 'manual', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions'];
+
 export type ListName = 'deny' | 'ask' | 'allow';
 
 /** Lists in evaluation order: deny, then ask, then allow. */
@@ -33,7 +39,7 @@ export interface Rule extends ParsedRule {
 
 export interface RuleSet {
   /** Explicit simulated mode, independent of recorded defaultMode settings. */
-  mode?: 'default' | 'acceptEdits';
+  mode?: SimMode;
   rules: Rule[];
   sources: Source[];
   /** Absolute directories from `permissions.additionalDirectories`, with the source of each. */

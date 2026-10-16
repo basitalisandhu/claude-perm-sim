@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `--mode dontAsk` denies every call that would otherwise prompt, and `--mode manual` is accepted as an alias for `default`. `plan`, `auto` and `bypassPermissions` are refused with a clear message instead of "unknown mode".
+- `load` warns about a `permissions.defaultMode` that is not a permission mode, about `auto` or `bypassPermissions` set in project or local settings (they only take effect from user or managed settings), and about `disableAutoMode` or `disableBypassPermissionsMode` set to anything other than the string `"disable"`.
+
+### Fixed
+
+- A Bash allow rule with a `*` no longer approves an exec wrapper (`watch`, `setsid`, `ionice`, `flock`) or a `find` with an action such as `-delete`, `-exec` or `-fprint`; only an exact rule does, as the permissions docs state. `find` with `-fprint`, `-fprint0`, `-fprintf`, `-fls`, `-okdir` or `-files0-from` is no longer treated as read-only.
+- Deny and ask rules, including a `*` glob deny, no longer apply to `EndConversation`, which Claude Code never removes or prompts for while other tools remain.
+- `permissions.defaultMode: "manual"` is shown as `default`, and an `auto` or `bypassPermissions` default mode from project settings no longer hides the user-level one.
+
 ## [0.2.0] - 2026-10-09
 
 ### Added

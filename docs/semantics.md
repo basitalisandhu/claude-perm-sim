@@ -49,6 +49,13 @@ in alphabetical order; the platform directory is `/Library/Application Support/C
   built-in set is not published; the list in `src/bash.ts` and the git read-only subcommand list are
   **inferred**. Many of the Manual-mode exceptions (globs for write-capable flags, `docker -H`, special
   shell variables) are not modelled.
+- Exec wrappers (`watch`, `setsid`, `ionice`, `flock`) and `find` with an action that runs commands,
+  deletes or writes files (`-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`, `-fprint`, `-fprint0`,
+  `-fprintf`, `-fls`) or reads its paths from a file (`-files0-from`) cannot be approved by a rule with a
+  `*` in it; only an exact rule with no `*` approves them, and such a `find` is not read-only
+  ([documented](https://code.claude.com/docs/en/permissions#exec-wrappers-and-find-actions)). The docs
+  name the wrappers with "such as", so the wrapper list is **inferred** as a minimum, and the `find`
+  primaries beyond the four the docs name are **inferred** from GNU find.
 - Environment runners that are **not** stripped (`npx`, `uvx`, `docker exec`, `devbox run`, `git -c`, ...)
   run their arguments, so an allow prefix ending in one is reported by `bypass`. The runner list is
   **inferred** from the docs' examples plus common tools.
@@ -93,6 +100,11 @@ an `mcp__` rule with parentheses are inert. Tool-name globs in deny and ask (`*`
 `Agent(param:value)` and other parameter rules apply to deny and ask only; a rule naming a primary content
 field (`command`, `file_path`, `url`, ...) is inert.
 
+Deny and ask rules, including a `*` glob deny, never apply to `EndConversation`: a deny cannot remove it
+while any other tool remains and an ask never prompts for it
+([documented](https://code.claude.com/docs/en/permissions#manage-permissions)). The simulator assumes
+other tools remain and reports such a rule in the call's notes.
+
 ## acceptEdits (modelled)
 
 `--mode acceptEdits` auto-approves edits only inside the working directory or
@@ -116,9 +128,27 @@ These calls retain their normal rule/default decision. This change does not
 model the host's separate safety gate ahead of explicit allow rules, dynamically
 loaded plugin directories, or the session-dependent auto-memory exception.
 
+## dontAsk (modelled)
+
+`--mode dontAsk` denies every call that would otherwise prompt, whether an ask rule matched or no rule
+did; allow rules, built-in read-only commands and reads inside the working directories still run
+([documented](https://code.claude.com/docs/en/permissions#permission-modes)). `--mode manual` is accepted
+as an alias for `default`, matching Claude Code. The `requiresUserInteraction`, network-path and
+connector exceptions are not modelled.
+
+## Recorded modes and the disable keys (documented)
+
+`load` reports the recorded `permissions.defaultMode`. A value that is not one of `default`, `manual`,
+`acceptEdits`, `plan`, `auto`, `dontAsk` or `bypassPermissions` is warned about and ignored; `auto` and
+`bypassPermissions` set in project or local settings are warned about and skipped, because they only
+take effect from user or managed settings; `manual` is shown as `default`. `disableAutoMode` (top level
+or under `permissions`) and `permissions.disableBypassPermissionsMode` take only the string `"disable"`,
+so any other value, such as `true`, is reported as having no effect. Source:
+[settings reference](https://code.claude.com/docs/en/settings-reference#permissions-defaultmode).
+
 ## Not modelled
 
-Permission modes plan, auto, dontAsk, bypassPermissions and the auto-mode
+Permission modes plan, auto, bypassPermissions and the auto-mode
 classifier; sandbox interactions; PreToolUse hook decisions and mod answers; `requiresUserInteraction` and
 organisation connector `ask` overrides (noted in output and the README, not applied as decisions); Windows
 path normalisation beyond forward-slash handling; and the read-only Manual-mode exceptions listed above.

@@ -16,7 +16,7 @@ import {
 import { lint } from './lint.js';
 import { findBypasses, type BypassContext } from './probes.js';
 import { loadRuleSet, ruleSetFromFile, SettingsError, type LoadOptions } from './settings.js';
-import { SEVERITY_RANK, type Severity } from './types.js';
+import { SEVERITY_RANK, type Severity, type SimMode } from './types.js';
 
 export const VERSION: string = (() => {
   try {
@@ -50,7 +50,7 @@ Settings sources (override the files that are read):
   --untrusted              Model a folder whose workspace trust was not accepted
 
 Options:
-  --mode <mode>            Explicit simulation mode: default (default), acceptEdits
+  --mode <mode>            Simulation mode: default (alias manual), acceptEdits, dontAsk
   --format <fmt>           table (default), json, sarif, hook
   --mcp-tool <name>        Known MCP tool to check coverage of in bypass (repeatable)
   --mcp-from <file>        Read MCP server names from a .mcp.json for bypass coverage
@@ -69,7 +69,7 @@ export interface CliOptions {
   positionals: string[];
   load: LoadOptions;
   format: Format;
-  mode: 'default' | 'acceptEdits';
+  mode: SimMode;
   mcpTools: string[];
   mcpFrom?: string;
   failOn: Severity;
@@ -149,8 +149,10 @@ export function parseArgs(argv: string[]): CliOptions {
       }
       case '--mode': {
         const mode = val();
-        if (mode !== 'default' && mode !== 'acceptEdits') throw new UsageError(`unknown mode: ${mode}`);
-        opts.mode = mode;
+        if (mode === 'manual') opts.mode = 'default';
+        else if (mode === 'default' || mode === 'acceptEdits' || mode === 'dontAsk') opts.mode = mode;
+        else if (mode === 'plan' || mode === 'auto' || mode === 'bypassPermissions') throw new UsageError(`mode ${mode} is not modelled; use default (or manual), acceptEdits or dontAsk`);
+        else throw new UsageError(`unknown mode: ${mode}`);
         break;
       }
       case '--mcp-tool':
