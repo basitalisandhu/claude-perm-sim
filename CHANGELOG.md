@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `explain --from <file>` decides one call per line (rule form or hook JSON; `-` reads stdin), skipping blank lines and `#` comments, and prints a table or, with `--format json`, an array. A malformed line is reported with its line number and the rest are still decided (#7).
+- A `prepare` script, so `npx github:basitalisandhu/claude-perm-sim` builds and runs without a GitHub Packages token. The README quick start now uses it and shows real output.
+
 - `--mode dontAsk` denies every call that would otherwise prompt, and `--mode manual` is accepted as an alias for `default`. `plan`, `auto` and `bypassPermissions` are refused with a clear message instead of "unknown mode".
 - `load` warns about a `permissions.defaultMode` that is not a permission mode, about `auto` or `bypassPermissions` set in project or local settings (they only take effect from user or managed settings), and about `disableAutoMode` or `disableBypassPermissionsMode` set to anything other than the string `"disable"`.
 

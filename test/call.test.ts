@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCall, CallError } from '../src/call.js';
+import { parseCall, parseCallLines, CallError } from '../src/call.js';
 import { parseRule, formatRule } from '../src/rules.js';
 
 describe('parseCall from rule form', () => {
@@ -49,5 +49,22 @@ describe('rule parsing round-trip', () => {
   });
   it('parses a bare tool rule', () => {
     expect(parseRule('Bash')).toEqual({ tool: 'Bash' });
+  });
+});
+
+describe('parseCallLines (explain --from)', () => {
+  it('skips blank lines and comments and keeps line numbers', () => {
+    const lines = parseCallLines('# header\n\nBash(ls)\n  \n# x\nEdit(a.ts)\n');
+    expect(lines.map((l) => l.line)).toEqual([3, 6]);
+    expect(lines.map((l) => l.call?.tool)).toEqual(['Bash', 'Edit']);
+  });
+  it('reports a malformed line with its number and keeps going', () => {
+    const lines = parseCallLines('Bash(ls)\n{ not json\nRead(.env)');
+    expect(lines[1]).toMatchObject({ line: 2, text: '{ not json' });
+    expect(lines[1].error).toMatch(/not valid/);
+    expect(lines[2].call?.tool).toBe('Read');
+  });
+  it('accepts Windows line endings', () => {
+    expect(parseCallLines('Bash(ls)\r\nBash(pwd)\r\n').map((l) => l.call?.input.command)).toEqual(['ls', 'pwd']);
   });
 });

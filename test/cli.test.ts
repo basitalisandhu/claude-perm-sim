@@ -114,3 +114,43 @@ describe('run() in-process', () => {
     expect(r.stdout).toContain('Bash(echo *)');
   });
 });
+
+describe('explain --from', () => {
+  it('decides a mixed file of rule-form and hook JSON calls', () => {
+    const r = run(['explain', '--from', fixture('calls.txt'), ...base('tight')]);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toBe('');
+    const lines = r.stdout.trim().split('\n');
+    expect(lines[0]).toMatch(/^line\s+decision\s+call\s+decided by$/);
+    expect(lines).toHaveLength(6);
+    expect(lines[1]).toMatch(/^2\s+allow\s+Bash\(npm run build\)\s+Bash\(npm run build\)$/);
+    expect(lines[2]).toMatch(/^4\s+deny\s+Bash\(rm -rf build\)\s+Bash\(rm \*\)$/);
+    expect(lines[3]).toMatch(/^5\s+allow\s+Edit\(src\/app\.ts\)\s+Edit\(src\/\*\*\)$/);
+    expect(lines[4]).toMatch(/^6\s+ask\s+mcp__github__create_issue/);
+    expect(lines[5]).toMatch(/^7\s+default ask\s+WebFetch/);
+  });
+  it('prints a JSON array with --format json', () => {
+    const r = run(['explain', '--from', fixture('calls.txt'), '--format', 'json', ...base('tight')]);
+    const doc = JSON.parse(r.stdout) as { line: number; decision: string }[];
+    expect(doc.map((d) => [d.line, d.decision])).toEqual([[2, 'allow'], [4, 'deny'], [5, 'allow'], [6, 'ask'], [7, 'default']]);
+  });
+  it('reports a bad line with its number, decides the rest, and exits 2', () => {
+    const r = run(['explain', '--from', fixture('calls-bad.txt'), '--format', 'json', ...base('tight')]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toMatch(/calls-bad\.txt:2: tool call JSON is not valid/);
+    const doc = JSON.parse(r.stdout) as { line: number; decision?: string; error?: string }[];
+    expect(doc).toHaveLength(3);
+    expect(doc[0].decision).toBe('allow');
+    expect(doc[1]).toMatchObject({ line: 2, input: '{ not json' });
+    expect(doc[2].decision).toBe('deny');
+  });
+  it('shows a bad line as an error row in the table', () => {
+    const r = run(['explain', '--from', fixture('calls-bad.txt'), ...base('tight')]);
+    expect(r.stdout).toMatch(/^2\s+error\s+\{ not json\s+tool call JSON is not valid/m);
+  });
+  it('refuses a call and --from together, a missing file, and sarif', () => {
+    expect(run(['explain', 'Bash(ls)', '--from', fixture('calls.txt'), ...base('tight')]).code).toBe(2);
+    expect(run(['explain', '--from', fixture('missing.txt'), ...base('tight')]).stderr).toMatch(/cannot read --from/);
+    expect(run(['explain', '--from', fixture('calls.txt'), '--format', 'sarif', ...base('tight')]).code).toBe(2);
+  });
+});

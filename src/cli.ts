@@ -2,12 +2,13 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseCall, CallError } from './call.js';
+import { parseCall, parseCallLines, CallError } from './call.js';
 import { diffRuleSets } from './diff.js';
 import { evaluate } from './engine.js';
 import {
   formatDiff,
   formatExplain,
+  formatExplainBatch,
   formatFindings,
   formatLoad,
   hookSnippet,
@@ -35,6 +36,7 @@ and find where the rules are more permissive than they look.
 Commands:
   load                     Print the effective allow, ask and deny lists with each rule's source
   explain "<tool call>"    Show the decision for one call and the rule and file that decided it
+  explain --from <file>    Decide one call per line of a file (rule form or hook JSON; - reads stdin)
   bypass                   Report where an allow rule admits more than it names (structural, no attacks)
   lint                     Static checks: duplicates, shadowed allows, broad patterns, dead rules
   diff <a.json> <b.json>   Show which sample decisions change between two settings files
@@ -59,7 +61,8 @@ Options:
   -h, --help               Show this help
   -V, --version            Show the version
 
-Exit codes: 0 success, 1 findings at or above --fail-on (bypass, lint), 2 usage or settings error.
+Exit codes: 0 success, 1 findings at or above --fail-on (bypass, lint), 2 usage or settings error
+(or, for explain --from, a line that is not a tool call; the other lines are still decided).
 `;
 
 export class UsageError extends Error {}
@@ -72,6 +75,7 @@ export interface CliOptions {
   mode: SimMode;
   mcpTools: string[];
   mcpFrom?: string;
+  callsFrom?: string;
   failOn: Severity;
   exe: string;
   help: boolean;
@@ -161,6 +165,9 @@ export function parseArgs(argv: string[]): CliOptions {
       case '--mcp-from':
         opts.mcpFrom = val();
         break;
+      case '--from':
+        opts.callsFrom = val();
+        break;
       case '--fail-on': {
         const s = val();
         if (!['high', 'medium', 'low', 'info'].includes(s)) throw new UsageError(`unknown severity: ${s}`);
@@ -220,6 +227,21 @@ export function run(argv: string[]): RunResult {
         return { stdout: formatLoad(set, opts.format) + '\n', stderr: '', code: 0 };
       }
       case 'explain': {
+        if (opts.callsFrom !== undefined) {
+          if (opts.positionals.length > 0) throw new UsageError('explain takes either a tool call or --from <file>, not both');
+          if (opts.format === 'sarif') throw new UsageError('explain --from prints table or json');
+          let content: string;
+          try {
+            content = readFileSync(opts.callsFrom === '-' ? 0 : opts.callsFrom, 'utf8');
+          } catch (err) {
+            throw new UsageError(`cannot read --from ${opts.callsFrom}: ${(err as Error).message}`);
+          }
+          const set = load();
+          const rows = parseCallLines(content).map((entry) => ({ entry, verdict: entry.call ? evaluate(entry.call, set) : undefined }));
+          const bad = rows.filter((r) => r.entry.error !== undefined);
+          const stderr = bad.map((r) => `${opts.callsFrom}:${r.entry.line}: ${r.entry.error}\n`).join('');
+          return { stdout: formatExplainBatch(rows, opts.format) + '\n', stderr, code: bad.length > 0 ? 2 : 0 };
+        }
         if (opts.positionals.length === 0) throw new UsageError('explain needs a tool call, for example explain "Edit(src/app.ts)"');
         const set = load();
         const call = parseCall(opts.positionals.join(' '));
