@@ -109,6 +109,8 @@ By default the tool reads the same files Claude Code does. Override any source w
 
 ## Bypass families
 
+`bypass` and `diff` discover MCP server names in `<project>/.mcp.json` and permission rules. Use `--mcp-from other.json` to override the configuration file, and repeat `--mcp-tool mcp__server__tool` for a known inventory. Discovery only reads names: it never expands environment variables, starts commands or contacts servers. A server coverage finding concerns an inert unlisted tool, not a claim that the configured server exposes that tool; `diff` uses `example_tool` as a representative. Missing default configuration is allowed, while malformed or missing explicit configuration exits 2.
+
 Each finding names the rule, the weakness class, and a tighter rule, and uses an inert placeholder for illustration. It never prints a runnable command.
 
 | Family | What it flags | Tighter rule it suggests |

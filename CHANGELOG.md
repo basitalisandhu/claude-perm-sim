@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `bypass` and `diff` automatically read server names from `<project>/.mcp.json` (overridden by `--mcp-from`) and permission rules. Bypass reports when unlisted server tools default to ask; diff includes an inert representative call per server. Configuration values are not expanded, commands are not executed, and no server is contacted. Invalid configurations exit 2. (#4)
+
 ## [0.3.0] - 2026-10-16
 
 ### Added
