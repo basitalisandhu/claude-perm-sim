@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseCall, parseCallLines, CallError } from './call.js';
 import { diffRuleSets } from './diff.js';
+import { splitMcpName } from './rules.js';
 import { evaluate } from './engine.js';
 import {
   formatDiff,
@@ -17,7 +18,7 @@ import {
 import { lint } from './lint.js';
 import { findBypasses, type BypassContext } from './probes.js';
 import { loadRuleSet, ruleSetFromFile, SettingsError, type LoadOptions } from './settings.js';
-import { SEVERITY_RANK, type Severity, type SimMode } from './types.js';
+import { SEVERITY_RANK, type Severity, type SimMode, type RuleSet } from './types.js';
 
 export const VERSION: string = (() => {
   try {
@@ -55,7 +56,7 @@ Options:
   --mode <mode>            Simulation mode: default (alias manual), acceptEdits, dontAsk
   --format <fmt>           table (default), json, sarif, hook
   --mcp-tool <name>        Known MCP tool to check coverage of in bypass (repeatable)
-  --mcp-from <file>        Read MCP server names from a .mcp.json for bypass coverage
+  --mcp-from <file>        MCP config for bypass/diff (default: <project>/.mcp.json)
   --fail-on <severity>     Exit 1 when a finding is at or above this severity (default: high)
   --exe <cmd>              Command used in the --format hook snippet (default: claude-perm-sim)
   -h, --help               Show this help
@@ -186,17 +187,30 @@ export function parseArgs(argv: string[]): CliOptions {
   return opts;
 }
 
-function mcpContext(opts: CliOptions): BypassContext {
-  const servers: string[] = [];
-  if (opts.mcpFrom) {
+function mcpContext(opts: CliOptions, set: RuleSet): BypassContext {
+  const servers = new Set<string>();
+  for (const rule of set.rules) {
+    const mcp = splitMcpName(rule.tool);
+    if (mcp?.server && !mcp.server.includes('*')) servers.add(mcp.server);
+  }
+  const config = opts.mcpFrom ?? path.join(set.projectDir, '.mcp.json');
+  if (opts.mcpFrom || existsSync(config)) {
     try {
-      const doc = JSON.parse(readFileSync(opts.mcpFrom, 'utf8')) as { mcpServers?: Record<string, unknown> };
-      if (doc.mcpServers) servers.push(...Object.keys(doc.mcpServers));
+      const doc: unknown = JSON.parse(readFileSync(config, 'utf8'));
+      if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) throw new Error('MCP config must be an object');
+      const m = (doc as Record<string, unknown>).mcpServers;
+      if (m !== undefined) {
+        if (typeof m !== 'object' || m === null || Array.isArray(m)) throw new Error('mcpServers must be an object');
+        for (const [name, value] of Object.entries(m)) {
+          if (!name || typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`invalid configuration for MCP server ${JSON.stringify(name)}`);
+          servers.add(name);
+        }
+      }
     } catch (err) {
-      throw new UsageError(`cannot read --mcp-from ${opts.mcpFrom}: ${(err as Error).message}`);
+      throw new UsageError(`cannot read MCP config ${config}: ${(err as Error).message}`);
     }
   }
-  return { mcpServers: servers, mcpTools: opts.mcpTools };
+  return { mcpServers: [...servers], mcpTools: opts.mcpTools };
 }
 
 export interface RunResult {
@@ -250,7 +264,7 @@ export function run(argv: string[]): RunResult {
       }
       case 'bypass': {
         const set = load();
-        const findings = findBypasses(set, mcpContext(opts));
+        const findings = findBypasses(set, mcpContext(opts, set));
         const out = formatFindings(findings, opts.format, 'bypass', VERSION);
         const code = exitForFindings(findings.map((f) => f.severity), opts.failOn);
         return { stdout: out + '\n', stderr: '', code };
@@ -270,7 +284,11 @@ export function run(argv: string[]): RunResult {
         const b = ruleSetFromFile(bFile, opts.load.project, opts.load.home);
         a.mode = opts.mode;
         b.mode = opts.mode;
-        const flips = diffRuleSets(a, b);
+        const ctx = mcpContext(opts, { ...a, rules: [...a.rules, ...b.rules] });
+        const flips = diffRuleSets(a, b, [
+          ...(ctx.mcpTools ?? []),
+          ...(ctx.mcpServers ?? []).map(server => `mcp__${server}__example_tool`),
+        ]);
         return { stdout: formatDiff(flips, opts.format, path.basename(aFile), path.basename(bFile)) + '\n', stderr: '', code: 0 };
       }
       default:
