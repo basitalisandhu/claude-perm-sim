@@ -1,4 +1,5 @@
 import { bashPrefix, isExecCapablePrefix } from './bash.js';
+import { evaluate } from './engine.js';
 import { domainOfSpecifier } from './domains.js';
 import { compilePathRule } from './paths.js';
 import { paramRule, splitMcpName } from './rules.js';
@@ -216,6 +217,20 @@ function mcpFindings(set: RuleSet, bctx: BypassContext): Finding[] {
     }
   }
   const tools = bctx.mcpTools ?? [];
+  for (const server of new Set(bctx.mcpServers ?? [])) {
+    const verdict = evaluate({ tool: `mcp__${server}__example_tool`, input: {} }, { ...set, mode: 'default' });
+    if (verdict.decision === 'default') {
+      out.push({
+        id: 'BYP-MCP-SERVER-UNCOVERED',
+        severity: 'info',
+        family: 'mcp-uncovered',
+        title: 'server has no catch-all permission rule',
+        message: `mcp__${server} has no rule for an unlisted tool, so new or otherwise unlisted tools default to ask. No server was contacted and no tool inventory was inferred.`,
+        probe: `mcp__${server}__<tool>`,
+        suggestion: `review the server's tools and decide each explicitly, or deliberately ask or deny mcp__${server}__*`,
+      });
+    }
+  }
   for (const tool of tools) {
     const covered = set.rules.some((r) => {
       if (r.list !== 'allow') return false;

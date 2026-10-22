@@ -16,7 +16,7 @@ export interface Flip {
  * are structural samples, not attacks: they instantiate each rule's own pattern so the diff can show
  * which decisions change between two settings files.
  */
-function sampleCalls(a: RuleSet, b: RuleSet): ToolCall[] {
+function sampleCalls(a: RuleSet, b: RuleSet, mcpTools: readonly string[]): ToolCall[] {
   const out: ToolCall[] = [];
   const seen = new Set<string>();
   const push = (call: ToolCall): void => {
@@ -26,6 +26,7 @@ function sampleCalls(a: RuleSet, b: RuleSet): ToolCall[] {
       out.push(call);
     }
   };
+  for (const tool of mcpTools) push({ tool, input: {} });
   for (const set of [a, b]) {
     for (const rule of set.rules) {
       const spec = rule.specifier;
@@ -44,9 +45,9 @@ function sampleCalls(a: RuleSet, b: RuleSet): ToolCall[] {
   return out;
 }
 
-export function diffRuleSets(a: RuleSet, b: RuleSet): Flip[] {
+export function diffRuleSets(a: RuleSet, b: RuleSet, mcpTools: readonly string[] = []): Flip[] {
   const flips: Flip[] = [];
-  for (const call of sampleCalls(a, b)) {
+  for (const call of sampleCalls(a, b, mcpTools)) {
     const before = evaluate(call, a).decision;
     const after = evaluate(call, b).decision;
     if (before !== after) flips.push({ call, label: describeCall(call), before, after });
