@@ -9,37 +9,49 @@ import type { Finding, Rule, RuleSet } from './types.js';
  * that can never match, mixed slash styles, and rules in `allow` that look like they belong in `ask`.
  */
 
-function sameRule(a: Rule, b: Rule): boolean {
-  return a.list === b.list && a.tool === b.tool && a.specifier === b.specifier;
+function ruleKey(r: Rule): string {
+  return JSON.stringify([r.list, r.tool, r.specifier ?? null]);
 }
 
 function duplicateFindings(set: RuleSet): Finding[] {
-  const out: Finding[] = [];
-  for (let i = 0; i < set.rules.length; i++) {
-    for (let j = i + 1; j < set.rules.length; j++) {
-      if (sameRule(set.rules[i], set.rules[j])) {
-        out.push({
-          id: 'LINT-DUP',
-          severity: 'low',
-          family: 'duplicate',
-          title: 'duplicate rule',
-          message: `${set.rules[j].raw} in ${set.rules[j].list} (${set.rules[j].source.file}) repeats the rule in ${set.rules[i].source.file}.`,
-          rule: set.rules[j],
-          suggestion: 'remove one copy',
-        });
-      }
-    }
+  // Group equal rules (same list, tool and specifier) instead of comparing every pair, then report each
+  // pair in the order the pairwise loop did: by the first rule, then the second.
+  const groups = new Map<string, number[]>();
+  set.rules.forEach((rule, i) => {
+    const key = ruleKey(rule);
+    const group = groups.get(key);
+    if (group) group.push(i);
+    else groups.set(key, [i]);
+  });
+  const pairs: [number, number][] = [];
+  for (const group of groups.values()) {
+    for (let a = 0; a < group.length; a++) for (let b = a + 1; b < group.length; b++) pairs.push([group[a], group[b]]);
   }
-  return out;
+  pairs.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  return pairs.map(([i, j]) => ({
+    id: 'LINT-DUP',
+    severity: 'low',
+    family: 'duplicate',
+    title: 'duplicate rule',
+    message: `${set.rules[j].raw} in ${set.rules[j].list} (${set.rules[j].source.file}) repeats the rule in ${set.rules[i].source.file}.`,
+    rule: set.rules[j],
+    suggestion: 'remove one copy',
+  }));
 }
 
 /** An allow rule whose covered calls a deny or ask rule also covers never takes effect for them. */
 function shadowFindings(set: RuleSet): Finding[] {
   const out: Finding[] = [];
-  const blockers = set.rules.filter((r) => r.list === 'deny' || r.list === 'ask');
+  // Deny and ask rules by tool name, in rule order, so each allow rule looks only at its own tool's.
+  const blockersByTool = new Map<string, Rule[]>();
+  for (const r of set.rules) {
+    if (r.list !== 'deny' && r.list !== 'ask') continue;
+    const list = blockersByTool.get(r.tool);
+    if (list) list.push(r);
+    else blockersByTool.set(r.tool, [r]);
+  }
   for (const allow of set.rules.filter((r) => r.list === 'allow')) {
-    for (const b of blockers) {
-      if (b.tool !== allow.tool) continue;
+    for (const b of blockersByTool.get(allow.tool) ?? []) {
       const bSpec = b.specifier;
       const aSpec = allow.specifier;
       const covers =

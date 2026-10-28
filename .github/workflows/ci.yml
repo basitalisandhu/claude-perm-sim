@@ -39,6 +39,39 @@ jobs:
           npx claude-perm-sim --version
           npx claude-perm-sim --help | head -1
 
+  quickstart:
+    name: README quick start on a fresh install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Pack, install into an empty folder, run the quick start and compare with the README sample
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm pack
+          awk '/^```text$/{f=1;next} f&&/^```$/{exit} f' README.md > "$RUNNER_TEMP/want.txt"
+          mkdir -p "$RUNNER_TEMP/tool" && cd "$RUNNER_TEMP/tool"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund "$GITHUB_WORKSPACE"/basitalisandhu-claude-perm-sim-*.tgz
+          cp -R "$GITHUB_WORKSPACE/test/fixtures/readme-quickstart" "$RUNNER_TEMP/project"
+          cd "$RUNNER_TEMP/project"
+          bin="$RUNNER_TEMP/tool/node_modules/.bin/claude-perm-sim"
+          "$bin" load | grep -q "Bash(npm run \*)"
+          "$bin" explain "Bash(git push origin main)" | grep -q "ask"
+          set +e
+          "$bin" bypass > bypass.txt
+          code=$?
+          set -e
+          test "$code" = "0" -o "$code" = "1"
+          "$bin" explain --from calls.txt > got.txt
+          diff "$RUNNER_TEMP/want.txt" got.txt
+
   container-build:
     name: Build the container image and run it
     runs-on: ubuntu-latest

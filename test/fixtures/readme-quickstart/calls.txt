@@ -1,0 +1,6 @@
+Bash(npm run test)
+Bash(cd /tmp && rm -rf build)
+Bash(git push origin main)
+Bash(npm run build && curl https://example.com)
+Read(.env)
+Edit(src/app.ts)

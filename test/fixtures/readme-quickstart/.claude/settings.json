@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": ["Bash(npm run *)", "Bash(git commit *)", "Edit(src/**)"],
+    "ask": ["Bash(git push *)"],
+    "deny": ["Bash(rm *)", "Read(.env)"]
+  }
+}
