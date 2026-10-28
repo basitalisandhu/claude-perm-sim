@@ -1,7 +1,7 @@
 import { bashPatternMatches, fileArguments, readOnlyReason, stripCommand, wildcardCannotApprove } from './bash.js';
 import { domainOfSpecifier, domainPatternMatches, hostOf } from './domains.js';
 import { isInside, pathRuleMatches, resolveRequestedPath, type PathContext } from './paths.js';
-import { PRIMARY_FIELDS, UNCONSULTED_PATH_TOOLS, paramRule, splitMcpName, starGlobToRegex } from './rules.js';
+import { PRIMARY_FIELDS, UNCONSULTED_PATH_TOOLS, paramRule, splitMcpName, starMatch } from './rules.js';
 import { parseCommand } from './shell.js';
 import type { Decision, ListName, Rule, RuleSet, Step, ToolCall, Verdict } from './types.js';
 
@@ -33,7 +33,7 @@ export function toolNameMatches(rule: Rule, tool: string): boolean {
       const m = /^mcp__([^*]+?)__/.exec(name);
       if (!m) return false;
     }
-    return starGlobToRegex(name).test(tool);
+    return starMatch(name, tool);
   }
   if (name.startsWith('mcp__')) {
     const r = splitMcpName(name)!;
@@ -105,7 +105,7 @@ export function ruleMatchesCall(rule: Rule, call: ToolCall, set: RuleSet): boole
     const v = call.input[param.name];
     if (v === undefined || v === null) return false;
     const value = param.value.trim();
-    return value.includes('*') ? starGlobToRegex(value).test(String(v)) : String(v) === value;
+    return value.includes('*') ? starMatch(value, String(v)) : String(v) === value;
   }
   if (rule.tool === 'Bash' || rule.tool === 'PowerShell') return false; // command patterns are matched per subcommand
   if (READ_TOOLS.has(call.tool) || EDIT_TOOLS.has(call.tool)) {
@@ -128,7 +128,7 @@ export function ruleMatchesCall(rule: Rule, call: ToolCall, set: RuleSet): boole
   }
   const primary = primaryString(call);
   if (primary === undefined) return false;
-  return spec.includes('*') ? starGlobToRegex(spec).test(primary) : primary === spec;
+  return spec.includes('*') ? starMatch(spec, primary) : primary === spec;
 }
 
 interface Match {

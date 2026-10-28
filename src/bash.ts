@@ -1,4 +1,4 @@
-import { escapeRegex } from './rules.js';
+import { starMatch } from './rules.js';
 import type { SimpleCommand } from './shell.js';
 
 /**
@@ -117,8 +117,7 @@ export function bashPatternMatches(specifier: string, text: string): boolean {
   if (spec.endsWith(':*')) spec = spec.slice(0, -2) + ' *';
   const stars = spec.split('*').length - 1;
   if (stars === 0) return spec === text;
-  const re = new RegExp('^' + spec.split('*').map(escapeRegex).join('[\\s\\S]*') + '$');
-  if (re.test(text)) return true;
+  if (starMatch(spec, text)) return true;
   // A trailing " *" that is the only wildcard also matches the bare command.
   return stars === 1 && spec.endsWith(' *') && text === spec.slice(0, -2);
 }

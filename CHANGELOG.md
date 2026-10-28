@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-28
+
+### Fixed
+
+- `explain` (and the PreToolUse hook it can run as) could hang on a long command or path against a rule with many wildcards: Bash, MCP tool name, parameter and WebFetch `domain:` patterns were matched with regular expressions that backtrack exponentially (`Bash(*a*a*a...b)` against a 3,000-character command did not finish in 10 seconds), and Read and Edit path rules with repeated `**/` segments did the same on a deep path. Wildcards are now matched by a linear scan, path rules by a single pass that answers both "the path" and "a parent directory"; the answers are unchanged (checked against the old regular expressions on 60,000 random cases).
+- `lint` compared every pair of rules to find duplicates and every allow rule with every deny and ask rule; both now group rules first. 20,000 rules: about 1.2 s down to 25 ms for load, lint and bypass together.
+
+### Added
+
+- Seeded fuzz tests: random rules and calls, wrong value types in settings, and bad bytes in a settings file, each run with a time limit; a scaling test (2,000 and 20,000 rules); a CI job that installs the packed tarball into an empty folder, runs the quick start and compares the README sample.
+- A Troubleshooting section in the README with real messages and fixes.
+
 ## [0.3.0] - 2026-10-16
 
 ### Added
@@ -46,7 +58,8 @@ First release. Published to two registries on GitHub Packages, using only the wo
 - A matching engine modelling the documented Bash splitting, wrappers, read-only commands and redirections; Read and Edit path anchoring, depth rules, `!` carve-outs and symlink handling; WebFetch domain matching; and MCP and parameter rules. Behaviour inferred from prose is labelled in `docs/semantics.md`.
 - Test suite with tight and permissive fixture rule sets, CI on Node 20 and 22, a container image published on version tags, and a guarded npmjs release workflow.
 
-[Unreleased]: https://github.com/basitalisandhu/claude-perm-sim/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/basitalisandhu/claude-perm-sim/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/basitalisandhu/claude-perm-sim/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/basitalisandhu/claude-perm-sim/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/basitalisandhu/claude-perm-sim/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/basitalisandhu/claude-perm-sim/releases/tag/v0.1.0

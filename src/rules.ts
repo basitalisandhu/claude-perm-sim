@@ -106,6 +106,30 @@ export function starGlobToRegex(glob: string, flags = ''): RegExp {
   return new RegExp('^' + glob.split('*').map(escapeRegex).join('[\\s\\S]*') + '$', flags);
 }
 
+/**
+ * Does `text` match `glob`, where `*` matches any run of characters (newlines included) and everything
+ * else is literal? The same answer as `starGlobToRegex(glob).test(text)`, found by placing each literal
+ * piece at its leftmost possible position. That takes time proportional to the text times the pattern,
+ * where the regular expression backtracks exponentially on a rule with many `*` against a long command.
+ */
+export function starMatch(glob: string, text: string): boolean {
+  const parts = glob.split('*');
+  if (parts.length === 1) return glob === text;
+  const first = parts[0];
+  const last = parts[parts.length - 1];
+  if (text.length < first.length + last.length || !text.startsWith(first) || !text.endsWith(last)) return false;
+  let pos = first.length;
+  const end = text.length - last.length;
+  for (let i = 1; i < parts.length - 1; i++) {
+    const piece = parts[i];
+    if (piece === '') continue;
+    const at = text.indexOf(piece, pos);
+    if (at < 0 || at + piece.length > end) return false;
+    pos = at + piece.length;
+  }
+  return true;
+}
+
 /** Split `mcp__<server>__<tool>` into its parts. */
 export function splitMcpName(name: string): { server: string; tool?: string } | undefined {
   if (!name.startsWith('mcp__')) return undefined;

@@ -50,7 +50,7 @@ Output is `table` (default), `json`, or `sarif`; `--format hook` prints a PreToo
 
 Requires Node 20 or newer.
 
-The quickest route needs nothing but Node: `npx github:basitalisandhu/claude-perm-sim <command>` fetches the source from GitHub and builds it on first use (pin a release with `#v0.3.0`). The container image below also works without any login.
+The quickest route needs nothing but Node: `npx github:basitalisandhu/claude-perm-sim <command>` fetches the source from GitHub and builds it on first use (pin a release with `#v0.3.1`). The container image below also works without any login.
 
 Every release is published by `publish-github-packages.yml` in two places on GitHub Packages: the npm package `@basitalisandhu/claude-perm-sim` and the container image `ghcr.io/basitalisandhu/claude-perm-sim`. The package is not on npmjs.com yet; when it is, it will use the same scoped name.
 
@@ -65,7 +65,7 @@ Point the `@basitalisandhu` scope at GitHub Packages in `~/.npmrc` (GitHub's npm
 
 ```bash
 npx @basitalisandhu/claude-perm-sim load                 # run without installing
-npm install -g @basitalisandhu/claude-perm-sim@0.3.0     # or install the claude-perm-sim command
+npm install -g @basitalisandhu/claude-perm-sim@0.3.1     # or install the claude-perm-sim command
 ```
 
 ### Container image
@@ -73,7 +73,7 @@ npm install -g @basitalisandhu/claude-perm-sim@0.3.0     # or install the claude
 The image runs as the non-root `node` user with `/work` as the working directory; mount your project there:
 
 ```bash
-docker run --rm -v "$PWD:/work" ghcr.io/basitalisandhu/claude-perm-sim:0.3.0 load
+docker run --rm -v "$PWD:/work" ghcr.io/basitalisandhu/claude-perm-sim:0.3.1 load
 ```
 
 ## Usage
@@ -145,6 +145,21 @@ No. It is structural: it reads your allow rules and reports where one is more pe
 
 **Why does Claude Code still prompt for a call this tool says is allowed?**
 Several documented reasons: an ask rule from any settings file prompts even when an allow rule also matches; a project's allow rules apply only after you accept the workspace trust dialog; a tool marked `requiresUserInteraction` prompts on every call; and a connector tool your organisation set to `ask` is never auto-approved. `load` shows every rule and its source so you can see which one applies.
+
+## Troubleshooting
+
+Each message below is real output. Bad input exits with code 2.
+
+| You see | What it means | Fix |
+|---|---|---|
+| `npm error code E401` or a login prompt from `npm install @basitalisandhu/claude-perm-sim` | GitHub Packages needs a token with `read:packages` even for public packages. | Use `npx github:basitalisandhu/claude-perm-sim <command>`, which needs no token, or the container image. |
+| `explain needs a tool call, for example explain "Edit(src/app.ts)"` | `explain` was given nothing to decide. | Quote the call in rule form: `explain "Bash(git push origin main)"`, or pass `--from calls.txt`. |
+| `error: not a tool name: Bash(ls` | The call is not in rule form; here the closing bracket is missing, often because the shell ate it. | Quote the whole call in single or double quotes. |
+| `error: <file> is not valid JSON: Unexpected end of JSON input` | A settings file is empty in part, cut off or has a trailing comma. | Fix the file; Claude Code would not read it either. |
+| `error: user settings file not found: /nope.json` | A path given with `--user`, `--local` or `--managed` does not exist. | Check the path, or pass `none` to leave that source out. |
+| `<file>: permissions.allow is not an array; ignored` | A list was written as a string. | Write `"allow": ["Bash(npm run *)"]`. |
+| `mode plan is not modelled; use default (or manual), acceptEdits or dontAsk` | Plan, auto and bypass modes are not simulated. | Pick one of the modes it names. |
+| Rules from your own `~/.claude/settings.json` or managed settings show up in `load` | The tool reads every source Claude Code reads, in the same order. | That is the effective rule set; pass `--user none` or `--managed none` to look at the project alone. |
 
 ## What this is not
 

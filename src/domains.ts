@@ -1,3 +1,5 @@
+import { starMatch } from './rules.js';
+
 /**
  * WebFetch `domain:` rules match the hostname of the requested URL, case-insensitively, with a trailing
  * `.` stripped from both sides. `*.example.com` matches subdomains at any depth but not the apex, a bare
@@ -34,8 +36,12 @@ export function domainPatternMatches(pattern: string, host: string): boolean {
     return rest.includes('*') ? false : true;
   }
   if (!p.includes('*')) return p === h;
-  const re = new RegExp('^' + p.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^.]*') + '$');
-  return re.test(h);
+  // `*` matches within one label (never a dot), so the labels line up one to one. Matching label by
+  // label gives the same answer as the regular expression `[^.]*` would, without its exponential
+  // backtracking on a pattern with many `*`.
+  const pl = p.split('.');
+  const hl = h.split('.');
+  return pl.length === hl.length && pl.every((label, i) => starMatch(label, hl[i]));
 }
 
 /** Domain from a `WebFetch(domain:...)` specifier, or undefined for other specifiers. */
