@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { run } from '../src/cli.js';
 import { findBypasses } from '../src/probes.js';
 import type { Finding } from '../src/types.js';
-import { loadFixture } from './helpers.js';
+import { fixture, loadFixture } from './helpers.js';
 
 function ids(findings: Finding[]): string[] {
   return findings.map((f) => f.id);
@@ -90,5 +91,36 @@ describe('bypass severity classes', () => {
   it('a domain:* allow is high', () => {
     const set = loadFixture('tight', { allowedTools: ['WebFetch(domain:*)'] });
     expect(findBypasses(set).find((f) => f.id === 'BYP-WEB-ALL')?.severity).toBe('high');
+  });
+});
+
+describe('a wildcard allow for a server the configuration does not list', () => {
+  const cliArgs = ['bypass', '--project', fixture('mcp-stale-server'), '--local', 'none', '--user', 'none', '--managed', 'none', '--format', 'json', '--fail-on', 'info'];
+  const cliFindings = (stdout: string): { id: string; severity: string; rule?: string }[] =>
+    (JSON.parse(stdout) as { findings: { id: string; severity: string; rule?: string }[] }).findings;
+
+  it('flags the unconfigured server as a low stale grant', () => {
+    const result = run(cliArgs);
+    expect(result.code).toBe(1);
+    const stale = cliFindings(result.stdout).filter((f) => f.id === 'BYP-MCP-STALE-SERVER');
+    expect(stale).toHaveLength(1);
+    expect(stale[0].severity).toBe('low');
+    expect(stale[0].rule).toBe('mcp__old__*');
+  });
+
+  it('does not flag a server the configuration lists', () => {
+    const result = run(cliArgs);
+    const stale = cliFindings(result.stdout).filter((f) => f.id === 'BYP-MCP-STALE-SERVER');
+    expect(stale.map((f) => f.rule)).not.toContain('mcp__github__*');
+  });
+
+  it('flags the stale server when the context carries a read configuration', () => {
+    const findings = findBypasses(loadFixture('mcp-stale-server'), { mcpServers: ['github'] });
+    expect(ids(findings)).toContain('BYP-MCP-STALE-SERVER');
+  });
+
+  it('does not run when no configuration file was read', () => {
+    const findings = findBypasses(loadFixture('mcp-stale-server'));
+    expect(ids(findings)).not.toContain('BYP-MCP-STALE-SERVER');
   });
 });

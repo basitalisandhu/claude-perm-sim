@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `bypass` reads MCP server names from `<project>/.mcp.json` (overridden by `--mcp-from`) and reports a wildcard allow rule for a server the configuration does not list as a low finding. Configuration values are not expanded, commands are not executed, and no server is contacted. A malformed project file warns on stderr and continues; a malformed or missing explicit `--mcp-from` exits 2. (#4)
+
 ## [0.3.1] - 2026-10-28
 
 ### Fixed
