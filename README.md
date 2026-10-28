@@ -109,7 +109,7 @@ By default the tool reads the same files Claude Code does. Override any source w
 
 ## Bypass families
 
-`bypass` and `diff` discover MCP server names in `<project>/.mcp.json` and permission rules. Use `--mcp-from other.json` to override the configuration file, and repeat `--mcp-tool mcp__server__tool` for a known inventory. Discovery only reads names: it never expands environment variables, starts commands or contacts servers. A server coverage finding concerns an inert unlisted tool, not a claim that the configured server exposes that tool; `diff` uses `example_tool` as a representative. Missing default configuration is allowed, while malformed or missing explicit configuration exits 2.
+`bypass` reads MCP server names from `<project>/.mcp.json`; use `--mcp-from other.json` to point at a different file, and repeat `--mcp-tool mcp__server__tool` for a known inventory. Discovery only reads names: it never expands environment variables, starts commands or contacts servers. A wildcard allow rule for a server the file does not configure is reported as a stale grant. Missing default configuration is allowed, a malformed project file warns on stderr and continues without server names, and a malformed or missing explicit `--mcp-from` exits 2.
 
 Each finding names the rule, the weakness class, and a tighter rule, and uses an inert placeholder for illustration. It never prints a runnable command.
 
@@ -123,6 +123,7 @@ Each finding names the rule, the weakness class, and a tighter rule, and uses an
 | `domain-subdomain` | `*.example.com`, which admits any subdomain an attacker could register | name each subdomain you trust |
 | `domain-wildcard` | `domain:*` or a mid-label wildcard that admits lookalikes | list exact hostnames |
 | `mcp-wildcard` | `mcp__server__*`, which also allows tools added in a future version | allow one tool per rule |
+| `mcp-stale-server` | a wildcard allow for a server the `.mcp.json` does not configure, dormant until the name returns | remove or rename the rule |
 | `mcp-uncovered` | an MCP tool no rule covers, so Claude Code prompts (default ask) | decide the tool explicitly |
 
 ## How matching is modelled

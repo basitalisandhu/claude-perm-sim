@@ -1,5 +1,4 @@
 import { bashPrefix, isExecCapablePrefix } from './bash.js';
-import { evaluate } from './engine.js';
 import { domainOfSpecifier } from './domains.js';
 import { compilePathRule } from './paths.js';
 import { paramRule, splitMcpName } from './rules.js';
@@ -15,7 +14,7 @@ import type { Finding, RuleSet, Severity } from './types.js';
  */
 
 export interface BypassContext {
-  /** MCP server names the project configures (from `.mcp.json` or `--mcp-server`). */
+  /** Server names from an MCP configuration file that was actually read (`.mcp.json` or `--mcp-from`); undefined when none was. */
   mcpServers?: string[];
   /** Fully qualified MCP tool names known to exist (`mcp__server__tool`), to flag ones no rule covers. */
   mcpTools?: string[];
@@ -216,21 +215,27 @@ function mcpFindings(set: RuleSet, bctx: BypassContext): Finding[] {
       });
     }
   }
-  const tools = bctx.mcpTools ?? [];
-  for (const server of new Set(bctx.mcpServers ?? [])) {
-    const verdict = evaluate({ tool: `mcp__${server}__example_tool`, input: {} }, { ...set, mode: 'default' });
-    if (verdict.decision === 'default') {
+  // A wildcard allow for a server the configuration does not list is a dormant grant: it would
+  // silently apply again if a server with that name is added later. Only runs when a
+  // configuration file was actually read (mcpServers is defined).
+  if (bctx.mcpServers !== undefined) {
+    const configured = new Set(bctx.mcpServers);
+    for (const rule of rulesIn(set, 'allow')) {
+      const server = /^mcp__([^*]+?)__/.exec(rule.tool)?.[1];
+      if (server === undefined || !rule.tool.includes('*') || configured.has(server)) continue;
       out.push({
-        id: 'BYP-MCP-SERVER-UNCOVERED',
-        severity: 'info',
-        family: 'mcp-uncovered',
-        title: 'server has no catch-all permission rule',
-        message: `mcp__${server} has no rule for an unlisted tool, so new or otherwise unlisted tools default to ask. No server was contacted and no tool inventory was inferred.`,
-        probe: `mcp__${server}__<tool>`,
-        suggestion: `review the server's tools and decide each explicitly, or deliberately ask or deny mcp__${server}__*`,
+        id: 'BYP-MCP-STALE-SERVER',
+        severity: 'low',
+        family: 'mcp-stale-server',
+        title: 'wildcard allow names a server that is not configured',
+        message: `${rule.raw} allows matching tools on a server named ${server}, which no MCP configuration lists. The grant is dormant; it would take effect silently if a server with that name is added later.`,
+        rule,
+        probe: `mcp__${server}__${PLACEHOLDER.mcpTool}`,
+        suggestion: `remove ${rule.raw}, or rename it to a configured server`,
       });
     }
   }
+  const tools = bctx.mcpTools ?? [];
   for (const tool of tools) {
     const covered = set.rules.some((r) => {
       if (r.list !== 'allow') return false;

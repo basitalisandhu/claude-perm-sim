@@ -18,62 +18,64 @@ function project(config: unknown, permissions: unknown = {}) {
 function args(root: string, ...extra: string[]) {
   return ['bypass', '--project', root, '--local', 'none', '--user', 'none', '--managed', 'none', '--format', 'json', '--fail-on', 'info', ...extra];
 }
+function stale(stdout: string): string[] {
+  const findings = (JSON.parse(stdout) as { findings: { id: string; rule?: string }[] }).findings;
+  return findings.filter((f) => f.id === 'BYP-MCP-STALE-SERVER').map((f) => f.rule ?? '');
+}
 
 describe('automatic MCP coverage', () => {
   it('discovers configured servers without executing commands or resolving environment values', () => {
     const root = project({ mcpServers: {
       alpha: { command: 'must-never-run', args: ['${SECRET}'] },
       beta: { url: 'https://must-never-fetch.invalid' },
-    } });
+    } }, { allow: ['mcp__alpha__*', 'mcp__old__*'] });
     const result = run(args(root));
-    expect(result.code).toBe(1);
-    expect(result.stdout).toContain('mcp__alpha');
-    expect(result.stdout).toContain('mcp__beta');
+    expect(stale(result.stdout)).toEqual(['mcp__old__*']);
     expect(result.stdout).not.toContain('${SECRET}');
   });
-  it('recognizes server-wide deny coverage', () => {
-    const root = project({ mcpServers: { alpha: { command: 'noop' } } }, { deny: ['mcp__alpha__*'] });
-    expect(run(args(root)).stdout).not.toContain('BYP-MCP-SERVER-UNCOVERED');
-  });
   it('lets an explicit MCP configuration override project discovery', () => {
-    const root = project({ mcpServers: { alpha: {} } });
+    const root = project({ mcpServers: { alpha: {} } }, { allow: ['mcp__alpha__*', 'mcp__beta__*'] });
     const other = path.join(root, 'other.json');
     fs.writeFileSync(other, JSON.stringify({ mcpServers: { beta: {} } }));
-    const output = run(args(root, '--mcp-from', other)).stdout;
-    expect(output).toContain('mcp__beta');
-    expect(output).not.toContain('mcp__alpha');
+    expect(stale(run(args(root, '--mcp-from', other)).stdout)).toEqual(['mcp__alpha__*']);
   });
-  it('returns usage errors for malformed, missing explicit, and invalid configurations', () => {
-    const root = project('{broken');
-    expect(run(args(root)).code).toBe(2);
-    fs.writeFileSync(path.join(root, '.mcp.json'), JSON.stringify({ mcpServers: [] }));
-    expect(run(args(root)).code).toBe(2);
+  it('flags a wildcard allow whose server only appears in rules', () => {
+    const root = project({ mcpServers: { beta: {} } }, { allow: ['mcp__alpha__*'] });
+    const result = run(args(root));
+    expect(stale(result.stdout)).toEqual(['mcp__alpha__*']);
+  });
+  it('does not flag a specific tool rule, an ask rule, or a deny rule', () => {
+    const root = project({ mcpServers: { beta: {} } }, {
+      allow: ['mcp__old__read'],
+      ask: ['mcp__asked__*'],
+      deny: ['mcp__denied__*'],
+    });
+    expect(stale(run(args(root)).stdout)).toEqual([]);
+  });
+  it('skips the stale-server check when no configuration file exists', () => {
+    const root = project({}, { allow: ['mcp__old__*'] });
     fs.rmSync(path.join(root, '.mcp.json'));
-    expect(run(args(root, '--mcp-from', 'missing.json')).code).toBe(2);
-    expect(run(args(root)).code).not.toBe(2);
+    const result = run(args(root));
+    expect(stale(result.stdout)).toEqual([]);
+    expect(result.stderr).toBe('');
   });
-  it('includes newly exposed MCP servers in diff analysis', () => {
+  it('warns and continues when the implicit project configuration is malformed', () => {
+    const root = project('{broken', { allow: ['mcp__old__*'] });
+    const result = run(args(root));
+    expect(result.code).not.toBe(2);
+    expect(result.stderr).toContain('warning');
+    expect(result.stderr).toContain('.mcp.json');
+    expect(stale(result.stdout)).toEqual([]);
+  });
+  it('exits 2 for a malformed, invalid, or missing explicit --mcp-from', () => {
     const root = project({ mcpServers: { alpha: {} } });
-    const before = path.join(root, 'before.json');
-    const after = path.join(root, 'after.json');
-    fs.writeFileSync(before, JSON.stringify({ permissions: { deny: ['mcp__alpha__*'] } }));
-    fs.writeFileSync(after, JSON.stringify({ permissions: {} }));
-    const result = run(['diff', before, after, '--project', root, '--format', 'json']);
-    expect(result.code).toBe(0);
-    expect(result.stdout).toContain('mcp__alpha');
-  });
-  it('derives known servers from permission rules when no config exists', () => {
-    const root = project({}, { allow: ['mcp__alpha__read'] });
-    fs.rmSync(path.join(root, '.mcp.json'));
-    expect(run(args(root)).stdout).toContain('BYP-MCP-SERVER-UNCOVERED');
-    expect(run(args(root)).stdout).toContain('mcp__alpha');
-  });
-  it('does not confuse a specific deny with server-wide coverage', () => {
-    const root = project({ mcpServers: { alpha: {} } }, { deny: ['mcp__alpha__delete'] });
-    expect(run(args(root)).stdout).toContain('BYP-MCP-SERVER-UNCOVERED');
-  });
-  it('treats deliberate ask rules as server coverage', () => {
-    const root = project({ mcpServers: { alpha: {} } }, { ask: ['mcp__alpha__*'] });
-    expect(run(args(root)).stdout).not.toContain('BYP-MCP-SERVER-UNCOVERED');
+    const bad = path.join(root, 'bad.json');
+    fs.writeFileSync(bad, '{broken');
+    expect(run(args(root, '--mcp-from', bad)).code).toBe(2);
+    fs.writeFileSync(bad, JSON.stringify({ mcpServers: [] }));
+    expect(run(args(root, '--mcp-from', bad)).code).toBe(2);
+    fs.writeFileSync(bad, JSON.stringify({ mcpServers: { '': {} } }));
+    expect(run(args(root, '--mcp-from', bad)).code).toBe(2);
+    expect(run(args(root, '--mcp-from', path.join(root, 'missing.json'))).code).toBe(2);
   });
 });
